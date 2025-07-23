@@ -21,3 +21,8 @@ sh install.sh
 pip install -r requirements-dev.txt
 pre-commit install
 ```
+
+### 3. Set environment variables for datasets and logging directory (default is dataset/ and logs/), and set WandB entity (username or team name)
+```bash
+source scripts/set_path.sh
+```
