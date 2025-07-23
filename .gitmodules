@@ -1,0 +1,4 @@
+[submodule "lumos"]
+	path = lumos
+	url = git@github.com:nematoli/lumos.git
+	branch = torch2x
