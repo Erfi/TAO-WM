@@ -1,4 +1,8 @@
-[submodule "lumos"]
-	path = lumos
+[submodule "external/lumos"]
+	path = external/lumos
 	url = git@github.com:nematoli/lumos.git
 	branch = torch2x
+[submodule "external/calvin_env"]
+	path = external/calvin_env
+	url = git@github.com:Erfi/calvin_env.git
+	branch = gymnasium
