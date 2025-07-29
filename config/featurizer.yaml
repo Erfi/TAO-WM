@@ -1,7 +1,7 @@
 defaults:
   - setup
-  - ../lumos/config/datamodule@datamodule: static_gripper_cam
-  - ../lumos/config/world_model@world_model: dreamer_v2
+  - ../external/lumos/config/datamodule@datamodule: static_gripper_cam
+  - ../external/lumos/config/world_model@world_model: dreamer_v2
   - _self_
 
 exp_dir: ${wm_chk_dir}
