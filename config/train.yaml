@@ -1,0 +1,7 @@
+defaults:
+  - setup
+  - tensor_cores
+  - callbacks: tao_default
+  - logger: wandb
+  - datamodule: tao_default
+

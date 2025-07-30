@@ -1,0 +1,7 @@
+_target_: taowm.utils.transforms.TransformManager
+_recursive_: False
+
+defaults:
+  - transforms:
+    - train
+    - validation

@@ -1,0 +1,12 @@
+defaults:
+  - dataset: play_dataset
+  - transform_manager: default
+
+_target_: taowm.datamodule.base_data_module.BaseDataModule
+_recursive_: False
+data_dir: /home/basiri/Dev/tacorl/dataset/data
+batch_size: 64
+num_workers: 4
+val_percentage: 0.2
+train_percentage: 1.0
+shuffle_val: False

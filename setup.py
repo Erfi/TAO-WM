@@ -10,7 +10,7 @@ def _read(f):
     return open(op.join(op.dirname(__file__), f)).read() if op.exists(f) else ""
 
 
-_meta = _read("tao-wm/__init__.py")
+_meta = _read("taowm/__init__.py")
 
 
 def find_meta(_meta, string):
@@ -31,7 +31,7 @@ meta = dict(
     description="TAO-WM: ",
     platforms=("Any"),
     zip_safe=False,
-    keywords="pytorch tao-wm".split(),
+    keywords="pytorch taowm".split(),
     author=find_meta(_meta, "__author__"),
     author_email=find_meta(_meta, "__email__"),
     url="",
