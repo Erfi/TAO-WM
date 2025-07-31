@@ -53,6 +53,8 @@ class TransformManager(object):
         elif "depth" in modality:
             if len(img.shape) == 2 or len(img.shape) == 3:
                 img = ArrayToTensor()(img, device=device)
+                if len(img.shape) == 2:
+                    img = img.unsqueeze(0)
             elif len(img.shape) == 4 and "depth_tactile" == modality:
                 img = ArrayToTensor()(img, device=device)
                 img = img.permute((0, 3, 1, 2)).contiguous()

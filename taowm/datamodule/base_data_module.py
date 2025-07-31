@@ -39,7 +39,6 @@ class BaseDataModule(pl.LightningDataModule):
 
         self.data_path = Path(data_dir).expanduser()
         if not self.data_path.is_absolute():
-            # TODO: Erfan - check if this is the correct path
             self.data_path = Path(__file__).resolve().parents[2] / self.data_path
 
         self.split_by_file = False
@@ -61,7 +60,7 @@ class BaseDataModule(pl.LightningDataModule):
             check_dir = self.training_dir
 
         # Check if training dir contain npz files
-        dataset_exist = len(list(check_dir.rglob("*.npz"))) > 0
+        dataset_exist = any(check_dir.rglob("*.npz"))
 
         # Download and unpack images
         if not dataset_exist:
@@ -83,8 +82,7 @@ class BaseDataModule(pl.LightningDataModule):
         # Instantiate transform manager
         train_dir = self.data_path if self.split_by_file else self.training_dir
         if len(self.transform_manager_cfg) > 0:
-            breakpoint()
-            # TODO: Erfan - check if this is necessary. Seems like it is not changing anything
+            # TODO: Erfan - Should we normalize the robot-obs using the statistics.yaml?
             transforms = load_dataset_statistics(train_dir, self.transform_manager_cfg["transforms"])
             self.transform_manager_cfg["transforms"] = transforms
             self.transform_manager = hydra.utils.instantiate(self.transform_manager_cfg)

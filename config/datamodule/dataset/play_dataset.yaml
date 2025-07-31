@@ -1,8 +1,9 @@
+_target_: taowm.datamodule.dataset.play_dataset.PlayDataset
+_recursive_: False
+
 defaults:
   - modalities: all_modalities
 
-_target_: taowm.datamodule.dataset.play_dataset.PlayDataset
-_recursive_: False
 min_window_size: 8
 max_window_size: 16
 pad: true

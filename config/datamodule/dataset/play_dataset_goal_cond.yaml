@@ -1,0 +1,15 @@
+_target_: taowm.datamodule.dataset.play_dataset.PlayDataset
+_recursive_: False
+
+defaults:
+  - modalities: all_modalities
+
+min_window_size: 8
+max_window_size: 16
+pad: true
+include_goal: true
+nn_steps_from_step_path: ~/Dev/tacorl/dataset/data/nn_steps_from_step.json # TODO: change this to use ${data_dir}/nn_steps_from_step.json
+goal_sampling_prob: 0.3
+goal_strategy_prob:
+  geometric: 0.9
+  similar_robot_obs: 0.1

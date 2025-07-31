@@ -35,7 +35,7 @@ validation:
     - _target_: torchvision.transforms.Normalize #0 to 1 -> -1 to 1
       mean: [0.5,]
       std: [0.5,]
-  # robot_obs:
-  #   - _target_: taowm.utils.transforms.NormalizeVector
-  # scene_obs:
-  #   - _target_: taowm.utils.transforms.NormalizeVector
+  robot_obs:
+    - _target_: taowm.utils.transforms.NormalizeVector
+  scene_obs:
+    - _target_: taowm.utils.transforms.NormalizeVector
