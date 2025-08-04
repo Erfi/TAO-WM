@@ -1,0 +1,2 @@
+__target__: taowm.algorithm.play_gcbc.PlayGCBC
+env: ${environment}

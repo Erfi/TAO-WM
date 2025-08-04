@@ -20,4 +20,22 @@ class PlayGCBC(pl.LightningModule):
     https://arxiv.org/abs/1903.01973
     """
 
-    pass
+    def __init__(
+        self,
+        env: DictConfig = {},
+        actor: DictConfig = {},
+        perceptual_encoder: DictConfig = {},
+        goal_encoder: DictConfig = {},
+        transform_manager: DictConfig = {},
+        dataloader: DictConfig = {},
+        lr: float = 1e-4,
+        real_world: bool = False,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+
+        self.real_world = real_world
+        if not real_world:
+            self.env_cfg = env
+            self.env = make_env(self.env_cfg)

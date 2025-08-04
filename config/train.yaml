@@ -4,4 +4,6 @@ defaults:
   - datamodule: default
   - callbacks: default
   - logger: wandb
+  - environment: goal_conditioned
+  - algorithm: play_gcbc
 
