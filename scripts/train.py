@@ -11,6 +11,7 @@ from pytorch_lightning import seed_everything, Trainer
 from lumos.utils.info_utils import (
     print_system_env_info,
     setup_tensor_cores,
+    get_last_checkpoint,
 )
 
 
@@ -41,6 +42,15 @@ def train(cfg: DictConfig) -> None:
     datamodule = hydra.utils.instantiate(cfg.datamodule)
 
     # Load the checkpoint if it exists, otherwise initialize a new model
+    breakpoint()
+    chk = get_last_checkpoint(model_dir)
+    if chk is not None:
+        # TODO: Get the correct model class (based on configuration) and load it
+        from lumos.world_models.dreamer_v2 import DreamerV2  # Example
+
+        model = DreamerV2.load_from_checkpoint(chk.as_posix())
+    else:
+        model = hydra.utils.instantiate(cfg.tao_model)
 
     # Initialize the trainer
 

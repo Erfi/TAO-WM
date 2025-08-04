@@ -8,3 +8,9 @@ __project__ = "TAO-WM"
 __author__ = ""
 __license__ = "MIT"
 __email__ = ""
+
+# Import environments to register them with gymnasium
+try:
+    import taowm.environments
+except ImportError:
+    pass
