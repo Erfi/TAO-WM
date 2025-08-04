@@ -1,0 +1,6 @@
+input_dir: ~/Dev/tacorl/dataset/data
+output_dir: ~/Dev/TAO-WM/scripts/dataset
+episode_id_length: 7
+robot_obs_size: 15
+scene_obs_size: 24
+scene_obs_included: true
