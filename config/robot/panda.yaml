@@ -1,4 +1,4 @@
-_target_: tacorl.envs.rl_robot.RLRobot
+_target_: taowm.robot.rl_robot.RLRobot
 filename: franka_panda/panda.urdf
 base_position: ${scene.robot_base_position}
 base_orientation: ${scene.robot_base_orientation}

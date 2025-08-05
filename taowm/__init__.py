@@ -11,6 +11,6 @@ __email__ = ""
 
 # Import environments to register them with gymnasium
 try:
-    import taowm.environments
+    import taowm.environment
 except ImportError:
     pass

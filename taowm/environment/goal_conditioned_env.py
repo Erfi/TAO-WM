@@ -7,7 +7,7 @@ import numpy as np
 from gymnasium import spaces
 from omegaconf import DictConfig
 
-from taowm.environments.rl_base_env import RLBaseEnv
+from taowm.environment.rl_base_env import RLBaseEnv
 
 log = logging.getLogger(__name__)
 

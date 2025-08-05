@@ -42,7 +42,6 @@ def train(cfg: DictConfig) -> None:
     datamodule = hydra.utils.instantiate(cfg.datamodule)
 
     # Load the checkpoint if it exists, otherwise initialize a new model
-    breakpoint()
     chk = get_last_checkpoint(model_dir)
     if chk is not None:
         # TODO: Get the correct model class (based on configuration) and load it
@@ -50,7 +49,8 @@ def train(cfg: DictConfig) -> None:
 
         model = DreamerV2.load_from_checkpoint(chk.as_posix())
     else:
-        model = hydra.utils.instantiate(cfg.tao_model)
+        model = hydra.utils.instantiate(cfg.algorithm)
+    log_rank_0(f"Model initialized: {model.__class__.__name__}")
 
     # Initialize the trainer
 

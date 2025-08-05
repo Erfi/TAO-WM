@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from gymnasium import spaces
 
-from taowm.environments.rl_base_env import RLBaseEnv
+from taowm.environment.rl_base_env import RLBaseEnv
 
 log = logging.getLogger(__name__)
 

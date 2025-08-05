@@ -1,9 +1,36 @@
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any, List
 
 import numpy as np
 import torch
 from omegaconf import ListConfig, OmegaConf
+
+
+def get_task_info_of_sequence(env, initial_state_info, last_state_info) -> List:
+    """
+    This method checks which tasks where successfully performed in a sequence
+    by resetting env to first and last state of the sequence.
+
+    Output:
+        task_info
+    """
+    tasks = env.unwrapped.tasks
+    env.reset(options=last_state_info)
+    goal_info = env.unwrapped.get_info()
+    # reset env to state of first step in the episode
+    env.reset(options=initial_state_info)
+    start_info = env.unwrapped.get_info()
+
+    # check if task was achieved in sequence
+    task_info = tasks.get_task_info(start_info, goal_info)
+    return task_info
+
+
+def get_state_info_on_idx(state_info: Dict[str, Any] = None, batch_idx: int = 0, seq_idx: int = 0):
+    return {
+        "robot_obs": state_info["robot_obs"][batch_idx, seq_idx],
+        "scene_obs": state_info["scene_obs"][batch_idx, seq_idx],
+    }
 
 
 def get_state_info_dict(

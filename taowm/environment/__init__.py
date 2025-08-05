@@ -6,17 +6,17 @@ from gymnasium.envs.registration import register
 # Register custom environments
 register(
     id="play-table-v0",
-    entry_point="taowm.environments:PlayTableEnv",
+    entry_point="taowm.environment:PlayTableEnv",
     max_episode_steps=200,
 )
 
 register(
     id="goal-conditioned-v0",
-    entry_point="taowm.environments:GoalConditionedEnv",
+    entry_point="taowm.environment:GoalConditionedEnv",
     max_episode_steps=200,
 )
 # Optional: Import the environment classes to make them available
-from taowm.environments.play_table_env import PlayTableEnv
-from taowm.environments.goal_conditioned_env import GoalConditionedEnv
+from taowm.environment.play_table_env import PlayTableEnv
+from taowm.environment.goal_conditioned_env import GoalConditionedEnv
 
 __all__ = ["PlayTableEnv", "GoalConditionedEnv"]

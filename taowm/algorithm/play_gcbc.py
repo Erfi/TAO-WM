@@ -39,3 +39,4 @@ class PlayGCBC(pl.LightningModule):
         if not real_world:
             self.env_cfg = env
             self.env = make_env(self.env_cfg)
+            print(f"Environment created!")

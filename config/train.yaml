@@ -4,6 +4,11 @@ defaults:
   - datamodule: default
   - callbacks: default
   - logger: wandb
+  - robot: panda_longer_finger
+  - scene: calvin_scene_D
+  - cameras: all_cameras
   - environment: goal_conditioned
   - algorithm: play_gcbc
+
+data_path: data
 
