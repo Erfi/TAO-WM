@@ -10,6 +10,8 @@ from pytorch_lightning import seed_everything, Trainer
 
 from lumos.utils.info_utils import (
     print_system_env_info,
+    setup_logger,
+    setup_callbacks,
     setup_tensor_cores,
     get_last_checkpoint,
 )
@@ -53,8 +55,13 @@ def train(cfg: DictConfig) -> None:
     log_rank_0(f"Model initialized: {model.__class__.__name__}")
 
     # Initialize the trainer
+    callbacks = setup_callbacks(cfg.callbacks)
+    logger = setup_logger(cfg)
+    trainer = Trainer(**cfg.trainer, logger=logger, callbacks=callbacks)
 
     # Start the training process
+    log_rank_0("Starting training...")
+    trainer.fit(model, datamodule=datamodule, ckpt_path=chk)
 
 
 @rank_zero_only

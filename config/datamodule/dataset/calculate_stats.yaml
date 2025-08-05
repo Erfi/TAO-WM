@@ -1,3 +1,4 @@
+# used for calculating the statistics of the calvin-like dataset and saving them in statistics.yaml
 input_dir: ~/Dev/tacorl/dataset/data
 output_dir: ~/Dev/TAO-WM/scripts/dataset
 episode_id_length: 7

@@ -1,3 +1,5 @@
 _target_: taowm.algorithm.play_gcbc.PlayGCBC
 _recursive_: false
+
 env: ${environment}
+lr: 1e-4

@@ -1,14 +1,34 @@
 defaults:
   - setup
   - tensor_cores
-  - datamodule: default
-  - callbacks: default
-  - logger: wandb
-  - robot: panda_longer_finger
   - scene: calvin_scene_D
+  - robot: panda_longer_finger
   - cameras: all_cameras
+  - trainer: default
   - environment: goal_conditioned
+  - logger: wandb
+  - callbacks: default
   - algorithm: play_gcbc
+  - datamodule: default
+  # overriding modalities to use rgb_static for all components
+  - datamodule/dataset/modalities@environment.modalities: rgb_static
+  - datamodule/dataset/modalities@environment.goal_modalities: rgb_static
+  - datamodule/dataset/modalities@algorithm.observation_modalities: rgb_static
+  - datamodule/dataset/modalities@algorithm.goal_modalities: rgb_static
+  - override /datamodule/dataset/modalities: rgb_static_and_rel_actions
 
-data_path: data
 
+script: tao
+  
+hydra:
+  run:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}
+  job:
+    config:
+      override_dirname:
+        exclude_keys:
+          - log_dir
+          - datamodule.root_data_dir 

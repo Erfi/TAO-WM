@@ -1,0 +1,6 @@
+accelerator: gpu
+devices: -1
+strategy: ddp_find_unused_parameters_true # or ddp
+precision: 16
+max_steps: 100000
+profiler: simple
