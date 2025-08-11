@@ -1,19 +1,25 @@
 #!/bin/bash
 cd external
 
-# Install lumos submodule and its dependencies
-cd lumos
+# initialize and update the submodules
+git submodule update --init --recursive
+
+# Install calvin (will automatically install calvin_env as its submodule)
+echo "Installing calvin..."
+cd calvin
 git submodule update --init --recursive
 sh install.sh
 
 cd ..
 
-# Install calvin_env submodule and its dependencies
-cd calvin_env
+# Install lumos submodule and its dependencies
+echo "Installing lumos..."
+cd lumos
 git submodule update --init --recursive
-pip install --no-cache-dir -e .
+sh install.sh
 
 cd ../..
 
 # Install the main package
+echo "Installing main package..."
 pip install --no-cache-dir -e .
