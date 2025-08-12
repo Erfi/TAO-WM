@@ -1,0 +1,7 @@
+# used for calculating the statistics of the calvin-like dataset and saving them in statistics.yaml
+input_dir: ???
+output_dir: ???
+episode_id_length: 7
+robot_obs_size: 15
+scene_obs_size: 24
+scene_obs_included: false

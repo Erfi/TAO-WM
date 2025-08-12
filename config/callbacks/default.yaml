@@ -1,0 +1,7 @@
+defaults:
+  - rollout: default
+  - rollout_lh: default_vision
+  - checkpoint: all
+  # - tsne_plot: default # TODO: can't be done withoug language goals
+  - kl_schedule: constant
+  - shm_signal: default
