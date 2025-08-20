@@ -1010,7 +1010,6 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         with torch.no_grad():
             if self.latent_goal is None:
                 if isinstance(goal, str):
-                    breakpoint()
                     embedded_lang = torch.from_numpy(self.lang_embeddings[goal]).to(self.device).squeeze(0).float()
                     self.latent_goal = self.language_goal(embedded_lang)
                 else:
