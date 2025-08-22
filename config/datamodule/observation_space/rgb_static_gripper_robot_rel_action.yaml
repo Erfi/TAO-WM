@@ -1,5 +1,5 @@
 rgb_obs: ['rgb_static', 'rgb_gripper']
-depth_obs: ['depth_static', 'depth_gripper']
+depth_obs: []
 state_obs: ['robot_obs']
 actions: ['rel_actions_world'] # actions, rel_actions_world, rel_actions_gripper
 language: []

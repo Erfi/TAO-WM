@@ -14,6 +14,5 @@ empty_cache: false
 log_video_to_file: false
 save_dir: ./videos
 debug: false
-data_dir: getfromtrainer?
 start_end_tasks_file: ${oc.env:TAO_DATA_DIR}/calvin_data/start_end_tasks.json
 num_tasks_per_rollout: 5

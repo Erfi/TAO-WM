@@ -1,5 +1,5 @@
 defaults:
-  - rollout: default
+  - rollout: default_vision
   - rollout_lh: default_vision
   - checkpoint: all
   # - tsne_plot: default # TODO: can't be done withoug language goals

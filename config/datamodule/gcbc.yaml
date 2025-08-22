@@ -2,7 +2,7 @@ defaults:
   - datasets: vision_only
   - transforms: rand_shift
   - proprioception_dims: robot_no_joints #robot_full
-  - observation_space: rgbd_static_gripper_robot_rel_action
+  - observation_space: rgb_static_gripper_robot_rel_action
 _target_: calvin_agent.datasets.calvin_data_module.CalvinDataModule
 _recursive_: false
 root_data_dir: ???

@@ -1,7 +1,8 @@
-from datetime import timedelta
 import logging
-from pathlib import Path
+import os
 import sys
+from datetime import timedelta
+from pathlib import Path
 from typing import List, Union
 
 from lightning_lite.accelerators.cuda import num_cuda_devices
@@ -32,11 +33,21 @@ def train(cfg: DictConfig) -> None:
     Args:
         cfg: hydra config
     """
+    # Set experiment directory and paths
+    if cfg.exp_dir is None:
+        cfg.exp_dir = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
+    model_dir = Path(cfg.exp_dir) / "model_weights/"
+    cfg.callbacks.checkpoint.dirpath = model_dir
+    os.makedirs(model_dir, exist_ok=True)
+
     # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
     seed_everything(cfg.seed, workers=True)  # type: ignore
+
+    # Instantiate DataModule
     datamodule = hydra.utils.instantiate(cfg.datamodule, training_repo_root=Path(taowm.__file__).parents[1])
-    chk = get_last_checkpoint(Path.cwd())
-    # Load Model
+
+    # Load or create Model
+    chk = get_last_checkpoint(Path(cfg.exp_dir))
     if chk is not None:
         model = getattr(models_m, cfg.model["_target_"].split(".")[-1]).load_from_checkpoint(chk.as_posix())
     else:
@@ -48,7 +59,7 @@ def train(cfg: DictConfig) -> None:
     log_rank_0("Repo commit hash: {}".format(get_git_commit_hash(Path(hydra.utils.to_absolute_path(__file__)))))
     log_rank_0(print_system_env_info())
 
-    train_logger = setup_logger(cfg, model)
+    train_logger = setup_logger(cfg)
     callbacks = setup_callbacks(cfg.callbacks)
     lr_logger = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_logger)
@@ -87,27 +98,25 @@ def setup_callbacks(callbacks_cfg: DictConfig) -> List[Callback]:
     return callbacks
 
 
-def setup_logger(cfg: DictConfig, model: LightningModule) -> Logger:
+def setup_logger(cfg: DictConfig) -> Logger:
     """
     Set up the logger (tensorboard or wandb) from hydra config.
-
     Args:
         cfg: Hydra config
-        model: LightningModule
-
     Returns:
         logger
     """
-    pathlib_cwd = Path.cwd()
-    if "group" in cfg.logger:
-        cfg.logger.group = pathlib_cwd.parent.name
-        cfg.logger.name = pathlib_cwd.parent.name + "/" + pathlib_cwd.name
-        cfg.logger.id = cfg.logger.name.replace("/", "_")
-        train_logger = hydra.utils.instantiate(cfg.logger)
-        # train_logger.watch(model)
+    if not cfg.logger:
+        return None
+    date_time = "_".join(cfg.exp_dir.split("/")[-2:])
+    if cfg.comment != "":
+        cfg.logger.name = "%s_%s" % (cfg.comment, date_time)
     else:
-        train_logger = hydra.utils.instantiate(cfg.logger)
-    return train_logger
+        cfg.logger.name = date_time
+    cfg.logger.id = cfg.logger.name.replace("/", "_")
+    logger = hydra.utils.instantiate(cfg.logger)
+
+    return logger
 
 
 def modify_argv_hydra() -> None:

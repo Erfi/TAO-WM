@@ -1,5 +1,5 @@
 defaults:
-  - perceptual_encoder: rgbd_static_gripper
+  - perceptual_encoder: rgb_static_gripper
   - plan_proposal: default
   - plan_recognition: transformers
   - distribution:  discrete

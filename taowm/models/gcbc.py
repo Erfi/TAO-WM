@@ -804,9 +804,9 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             perceptual_emb = self.perceptual_encoder(
                 dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
             )
-            if self.state_recons:
+            if self.state_recons:  # skip
                 proprio_loss += self.perceptual_encoder.state_reconstruction_loss()
-            if "lang" in self.modality_scope:
+            if "lang" in self.modality_scope:  # skip
                 latent_goal = self.language_goal(dataset_batch["lang"])
             else:
                 latent_goal = self.visual_goal(perceptual_emb[:, -1])
@@ -928,10 +928,10 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             perceptual_emb = self.perceptual_encoder(
                 dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
             )
-            if self.state_recons:
+            if self.state_recons:  # skip
                 state_recon_loss = self.perceptual_encoder.state_reconstruction_loss()
                 self.log(f"val/proprio_loss_{self.modality_scope}", state_recon_loss, sync_dist=True)
-            if "lang" in self.modality_scope:
+            if "lang" in self.modality_scope:  # skip
                 latent_goal = self.language_goal(dataset_batch["lang"])
             else:
                 latent_goal = self.visual_goal(perceptual_emb[:, -1])
@@ -955,7 +955,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             gripper_sr = torch.mean((gt_gripper_act == gripper_discrete).float())
             _, seq_feat = self.plan_recognition(perceptual_emb)
 
-            if "lang" in self.modality_scope:
+            if "lang" in self.modality_scope:  # skip
                 if self.use_bc_z_auxiliary_loss:
                     val_pred_lang_loss = self.bc_z_auxiliary_loss(
                         seq_feat, dataset_batch["lang"], dataset_batch["use_for_aux_lang_loss"]

@@ -16,5 +16,5 @@ perceptual_emb_slice: [64, 128]
 policy_rnn_dropout_p: 0.0
 num_layers: 2
 rnn_model: rnn_decoder
-gripper_control: true
+gripper_control: false
 discrete_gripper: true
