@@ -4,4 +4,4 @@ output_dir: ???
 episode_id_length: 7
 robot_obs_size: 15
 scene_obs_size: 24
-scene_obs_included: false
+scene_obs_included: true

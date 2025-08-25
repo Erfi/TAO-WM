@@ -53,20 +53,12 @@ def calculate_dataset_statistics(cfg: DictConfig) -> None:
                     delta = scene_obs - running_mean_scene_obs
                     running_mean_scene_obs += delta / counter
                     running_var_scene_obs += delta * (scene_obs - running_mean_scene_obs)
-                action_min_bound = np.minimum(action_min_bound, data["actions"].min(axis=0))
-                action_max_bound = np.maximum(action_max_bound, data["actions"].max(axis=0))
-                rel_action_world_min_bound = np.minimum(
-                    rel_action_world_min_bound, data["rel_actions_world"].min(axis=0)
-                )
-                rel_action_world_max_bound = np.maximum(
-                    rel_action_world_max_bound, data["rel_actions_world"].max(axis=0)
-                )
-                rel_action_gripper_min_bound = np.minimum(
-                    rel_action_gripper_min_bound, data["rel_actions_gripper"].min(axis=0)
-                )
-                rel_action_gripper_max_bound = np.maximum(
-                    rel_action_gripper_max_bound, data["rel_actions_gripper"].max(axis=0)
-                )
+                action_min_bound = np.minimum(action_min_bound, data["actions"])
+                action_max_bound = np.maximum(action_max_bound, data["actions"])
+                rel_action_world_min_bound = np.minimum(rel_action_world_min_bound, data["rel_actions_world"])
+                rel_action_world_max_bound = np.maximum(rel_action_world_max_bound, data["rel_actions_world"])
+                rel_action_gripper_min_bound = np.minimum(rel_action_gripper_min_bound, data["rel_actions_gripper"])
+                rel_action_gripper_max_bound = np.maximum(rel_action_gripper_max_bound, data["rel_actions_gripper"])
 
     # Calculate the running std
     running_std_robot_obs = np.sqrt(running_var_robot_obs / counter)
