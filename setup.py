@@ -34,7 +34,7 @@ meta = dict(
     keywords="pytorch tao-wm".split(),
     author=find_meta(_meta, "__author__"),
     author_email=find_meta(_meta, "__email__"),
-    url="",
+    url="https://github.com/Erfi/TAO-WM.git",
     packages=find_packages(exclude=["tests"]),
     install_requires=install_requires,
 )
