@@ -1,7 +1,7 @@
 ##	Training TAO-WM on a Slurm Cluster
 ### Starting a training
 ```bash
-$ cd $TAO_ROOT/slurm_scripts
+$ cd $TAO_ROOT_DIR/slurm_scripts
 $ python slurm_training.py --venv tao_venv --train_file "../scripts/train_wm.py"
 ```
 This assumes that `--venv tao_venv` specifies a conda environment.

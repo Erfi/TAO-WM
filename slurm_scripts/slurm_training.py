@@ -14,7 +14,7 @@ if default_log_dir == "/tmp":
 parser = argparse.ArgumentParser(description="Parse slurm parameters and hydra config overrides")
 
 parser.add_argument("--script", type=str, default="./sbatch_train.sh")
-parser.add_argument("--train_file", type=str, default="../scripts/train_wm.py")
+parser.add_argument("--train_file", type=str, default="../scripts/train_tao.py")
 parser.add_argument("-l", "--log_dir", type=str, default=default_log_dir)
 parser.add_argument("-j", "--job_name", type=str, default="tao_job")
 parser.add_argument("-g", "--gpus", type=int, default=1)
