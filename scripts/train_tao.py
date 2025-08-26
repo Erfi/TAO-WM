@@ -36,7 +36,7 @@ def train(cfg: DictConfig) -> None:
     # Set experiment directory and paths
     if cfg.exp_dir is None:
         cfg.exp_dir = hydra.core.hydra_config.HydraConfig.get()["runtime"]["output_dir"]
-    model_dir = Path(cfg.exp_dir) / "model_weights/"
+    model_dir = Path(cfg.exp_dir) / "saved_models/"
     cfg.callbacks.checkpoint.dirpath = model_dir
     os.makedirs(model_dir, exist_ok=True)
 
