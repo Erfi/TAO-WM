@@ -615,7 +615,9 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         """
         Call this at the beginning of a new rollout when doing inference.
         """
+        self.plan = None
         self.latent_goal = None
+        self.rollout_step_counter = 0
 
     def step(self, obs, goal):
         """
@@ -623,28 +625,15 @@ class LMP(pl.LightningModule, CalvinBaseModel):
 
         Args:
             obs (dict): Observation from environment.
-            goal (dict): Goal as visual observation or embedded language instruction.
+            goal (dict): Goal as visual observation.
 
         Returns:
             Predicted action.
         """
-        with torch.no_grad():
-            if self.latent_goal is None:
-                if isinstance(goal, str):
-                    embedded_lang = torch.from_numpy(self.lang_embeddings[goal]).to(self.device).squeeze(0).float()
-                    self.latent_goal = self.language_goal(embedded_lang)
-                else:
-                    imgs = {
-                        k: torch.cat([v, goal["rgb_obs"][k]], dim=1) for k, v in obs["rgb_obs"].items()
-                    }  # (1, 2, C, H, W)
-                    depth_imgs = {k: torch.cat([v, goal["depth_obs"][k]], dim=1) for k, v in obs["depth_obs"].items()}
-                    state = torch.cat([obs["robot_obs"], goal["robot_obs"]], dim=1)
-                    perceptual_emb = self.perceptual_encoder(imgs, depth_imgs, state)
-                    self.latent_goal = self.visual_goal(perceptual_emb[:, -1])
-
-            perceptual_emb = self.perceptual_encoder(obs["rgb_obs"], obs["depth_obs"], obs["robot_obs"])
-            empty_plan = torch.empty(1, 0).to(self.device)
-            action = self.action_decoder.act(
-                empty_plan, perceptual_emb, self.latent_goal, obs["robot_obs_raw"]
-            )  # type:  ignore
-            return action
+        # replan every replan_freq steps (default 30 i.e every second)
+        if self.rollout_step_counter % self.replan_freq == 0:
+            self.plan, self.latent_goal = self.get_pp_plan_vision(obs, goal)
+        # use plan to predict actions with current observations
+        action = self.predict_with_plan(obs, self.latent_goal, self.plan)
+        self.rollout_step_counter += 1
+        return action
