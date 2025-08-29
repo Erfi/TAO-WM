@@ -1,0 +1,17 @@
+defaults:
+  - perceptual_encoder: rgb_static_gripper
+  - plan_proposal: default
+  - plan_recognition: birnn
+  - distribution: continuous 
+  - visual_goal: default
+  - action_decoder: hulc_default
+  - optimizer: adam
+  - lr_scheduler: constant
+
+_target_: taowm.models.lmp.LMP
+_recursive_: false
+
+kl_beta: ${loss.kl_beta}
+kl_balancing_mix: ${loss.kl_balancing_mix}
+state_recons: false
+state_recon_beta: ${loss.state_recon_beta}

@@ -1,8 +1,8 @@
 defaults:
   - setup
   - callbacks: default
-  - datamodule: gcbc
-  - model: gcbc
+  - datamodule: lmp
+  - model: lmp
   - loss: default
   - training: default_training
   - trainer: play_trainer

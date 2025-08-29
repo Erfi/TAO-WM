@@ -24,35 +24,24 @@ def log_rank_0(*args, **kwargs):
     logger.info(*args, **kwargs)
 
 
-class GCBC(pl.LightningModule, CalvinBaseModel):
+class LMP(pl.LightningModule, CalvinBaseModel):
     """
-    The lightning module used for training.
+    The lightning module used for training Play-LMP (Play-Supervised Latent Motor Plans: https://arxiv.org/abs/1903.01973).
 
     Args:
         perceptual_encoder: DictConfig for perceptual_encoder.
         plan_proposal: DictConfig for plan_proposal network.
         plan_recognition: DictConfig for plan_recognition network.
-        language_goal: DictConfig for language_goal encoder.
+        distribution: DictConfig for plan distribution (continuous or discrete).
         visual_goal: DictConfig for visual_goal encoder.
         action_decoder: DictConfig for action_decoder.
         kl_beta: Weight for KL loss term.
         kl_balancing_mix: Weight for KL balancing (as in https://arxiv.org/pdf/2010.02193.pdf).
         state_recons: If True, use state reconstruction auxiliary loss.
         state_recon_beta: Weight for state reconstruction loss term.
-        use_bc_z_auxiliary_loss: If True, use BC-Z language regression auxiliary loss.
-        bc_z_auxiliary_loss_beta: Weight for language reconstruction loss term.
-        use_mia_auxiliary_loss: If True, use MIA cross-modality matching auxiliary loss.
-        mia_auxiliary_loss_beta: Weight for cross-modality matching loss term.
         optimizer: DictConfig for optimizer.
         lr_scheduler: DictConfig for learning rate scheduler.
-        distribution: DictConfig for plan distribution (continuous or discrete).
-        val_instructions: DictConfig with validation language instructions for each task.
-        use_clip_auxiliary_loss: If True, use CLIP contrastive auxiliary loss.
-        clip_auxiliary_loss_beta: Weight for CLIP contrastive loss.
         replan_freq: After how many steps generate new plan (only for inference).
-        bc_z_lang_decoder: DictConfig for language regression network for BC-Z language regression loss.
-        mia_lang_discriminator: DictConfig for discriminator network for MIA cross-modality matching loss.
-        proj_vis_lang: DictConfig for projection network for CLIP contrastive loss.
     """
 
     def __init__(
@@ -60,29 +49,18 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         perceptual_encoder: DictConfig,
         plan_proposal: DictConfig,
         plan_recognition: DictConfig,
-        language_goal: DictConfig,
+        distribution: DictConfig,
         visual_goal: DictConfig,
         action_decoder: DictConfig,
         kl_beta: float,
         kl_balancing_mix: float,
         state_recons: bool,
         state_recon_beta: float,
-        use_bc_z_auxiliary_loss: bool,
-        bc_z_auxiliary_loss_beta: float,
-        use_mia_auxiliary_loss: bool,
-        mia_auxiliary_loss_beta: float,
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
-        distribution: DictConfig,
-        val_instructions: DictConfig,
-        use_clip_auxiliary_loss: bool,
-        clip_auxiliary_loss_beta: float,
         replan_freq: int = 30,
-        bc_z_lang_decoder: Optional[DictConfig] = None,
-        mia_lang_discriminator: Optional[DictConfig] = None,
-        proj_vis_lang: Optional[DictConfig] = None,
     ):
-        super(GCBC, self).__init__()
+        super(LMP, self).__init__()
         self.perceptual_encoder = hydra.utils.instantiate(perceptual_encoder, device=self.device)
         self.setup_input_sizes(
             self.perceptual_encoder,
@@ -99,26 +77,11 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
 
         # goal encoders
         self.visual_goal = hydra.utils.instantiate(visual_goal)
-        self.language_goal = hydra.utils.instantiate(language_goal) if language_goal else None
 
         # policy network
         self.action_decoder: ActionDecoder = hydra.utils.instantiate(action_decoder)
 
         # auxiliary losses
-        self.use_clip_auxiliary_loss = use_clip_auxiliary_loss
-        self.clip_auxiliary_loss_beta = clip_auxiliary_loss_beta
-        self.use_bc_z_auxiliary_loss = use_bc_z_auxiliary_loss
-        self.bc_z_auxiliary_loss_beta = bc_z_auxiliary_loss_beta
-        self.use_mia_auxiliary_loss = use_mia_auxiliary_loss
-        self.mia_auxiliary_loss_beta = mia_auxiliary_loss_beta
-        if use_clip_auxiliary_loss:
-            self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-            self.proj_vis_lang = hydra.utils.instantiate(proj_vis_lang)
-        if bc_z_lang_decoder:
-            self.bc_z_lang_decoder = hydra.utils.instantiate(bc_z_lang_decoder)
-        if mia_lang_discriminator:
-            self.mia_lang_discriminator = hydra.utils.instantiate(mia_lang_discriminator)
-            self.proj_vis_lang = hydra.utils.instantiate(proj_vis_lang)
         self.state_recons = state_recons
         self.st_recon_beta = state_recon_beta
 
@@ -128,8 +91,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         self.modality_scope = "vis"
         self.optimizer_config = optimizer
         self.lr_scheduler = lr_scheduler
-        # action_decoder.out_features = action_decoder.out_features
-        # self.perceptual_encoder.bc_z_lang_decoder.perceptual_features = self.perceptual_encoder.bc_z_lang_decoder.perceptual_features
+
         self.save_hyperparameters()
 
         # for inference
@@ -137,20 +99,6 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         self.replan_freq = replan_freq
         self.latent_goal = None
         self.plan = None
-        self.lang_embeddings = None
-
-        # for clip loss ground truth plot
-        if self.use_clip_auxiliary_loss:
-            self.encoded_lang_train: Optional[torch.Tensor] = None
-            self.encoded_lang_val: Optional[torch.Tensor] = None
-            self.train_lang_emb: Optional[torch.Tensor] = None
-            self.lang_data_val = None
-            self.task_to_id: Optional[Dict] = None
-            self.val_dataset = None
-            self.train_lang_task_ids: Optional[np.ndarray] = None
-            self.val_lang_emb: Optional[torch.Tensor] = None
-            self.val_lang_task_ids: Optional[np.ndarray] = None
-            self.val_instructions = val_instructions
 
     @staticmethod
     def setup_input_sizes(
@@ -545,59 +493,6 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             loss *= 0
         return loss
 
-    def on_fit_start(self) -> None:
-        """
-        Preprocessing for clip loss metrics, only called once at the beginning of the training.
-        Note that these metrics are not actually used for training.
-        """
-        if self.use_clip_auxiliary_loss:
-            train_dataset = self.trainer.datamodule.train_datasets["lang"]  # type: ignore
-            val_dataset = self.trainer.datamodule.val_datasets["lang"]  # type: ignore
-            self.val_dataset = val_dataset
-            lang_data_train = np.load(
-                train_dataset.abs_datasets_dir / train_dataset.lang_folder / "auto_lang_ann.npy", allow_pickle=True
-            ).item()
-            self.lang_data_val = np.load(
-                val_dataset.abs_datasets_dir / val_dataset.lang_folder / "auto_lang_ann.npy", allow_pickle=True
-            ).item()
-            lang_embeddings_val = np.load(
-                val_dataset.abs_datasets_dir / val_dataset.lang_folder / "embeddings.npy", allow_pickle=True
-            ).item()
-            train_lang_instructions = list(set(lang_data_train["language"]["ann"]))
-            train_lang_ids = [
-                lang_data_train["language"]["ann"].index(instruction) for instruction in train_lang_instructions
-            ]
-            self.train_lang_emb = (
-                torch.from_numpy(lang_data_train["language"]["emb"][train_lang_ids]).to(self.device).squeeze().float()
-            )
-            train_lang_tasks = list(np.array(lang_data_train["language"]["task"])[train_lang_ids])
-            train_lang_task_ids = [list(set(train_lang_tasks)).index(task) for task in train_lang_tasks]
-
-            self.task_to_id = {k: v for k, v in zip(set(train_lang_tasks), set(train_lang_task_ids))}
-            self.train_lang_task_ids = np.array(train_lang_task_ids)
-            val_lang_tasks = []
-            val_lang_emb = []
-            val_lang_instructions = []
-            for val_task, val_instructions in self.val_instructions.items():
-                if val_task not in self.task_to_id:
-                    continue
-                val_lang_tasks.append(val_task)
-                val_lang_emb.append(torch.from_numpy(lang_embeddings_val[val_task]["emb"][0]).to(self.device))
-                val_lang_instructions.append(list(lang_embeddings_val[val_task]["ann"])[0])
-            self.val_lang_emb = torch.cat(val_lang_emb).float()
-            self.val_lang_task_ids = np.array([self.task_to_id[task] for task in val_lang_tasks])
-
-    def load_lang_embeddings(self, embeddings_path):
-        """
-        This has to be called before inference. Loads the lang embeddings from the dataset.
-
-        Args:
-            embeddings_path: Path to <dataset>/validation/embeddings.npy
-        """
-        embeddings = np.load(embeddings_path, allow_pickle=True).item()
-        # we want to get the embedding for full sentence, not just a task name
-        self.lang_embeddings = {v["ann"][0]: v["emb"] for k, v in embeddings.items()}
-
     def predict_with_plan(
         self,
         obs: Dict[str, Any],
@@ -650,28 +545,6 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         self.action_decoder.clear_hidden_state()
         return sampled_plan, latent_goal
 
-    def get_pp_plan_lang(self, obs: dict, goal: dict) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Use plan proposal network to sample new plan using a visual goal embedding.
-
-        Args:
-            obs: Observation from environment.
-            goal: Embedded language instruction.
-
-        Returns:
-            sampled_plan: Sampled plan.
-            latent_goal: Encoded language goal.
-        """
-        with torch.no_grad():
-            perceptual_emb = self.perceptual_encoder(obs["rgb_obs"], obs["depth_obs"], obs["robot_obs"])
-            latent_goal = self.language_goal(goal)
-            # ------------Plan Proposal------------ #
-            pp_state = self.plan_proposal(perceptual_emb[:, 0], latent_goal)
-            pp_dist = self.dist.get_dist(pp_state)
-            sampled_plan = self.dist.sample_latent_plan(pp_dist)
-        self.action_decoder.clear_hidden_state()
-        return sampled_plan, latent_goal
-
     @rank_zero_only
     def on_train_epoch_start(self) -> None:
         logger.info(f"Start training epoch {self.current_epoch}")
@@ -682,82 +555,10 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
 
     def on_validation_epoch_start(self) -> None:
         log_rank_0(f"Start validation epoch {self.current_epoch}")
-        if self.use_clip_auxiliary_loss:
-            if self.train_lang_emb.device != self.device:  # type: ignore
-                self.train_lang_emb = self.train_lang_emb.to(self.device)  # type: ignore
-                self.val_lang_emb = self.val_lang_emb.to(self.device)  # type: ignore
-            self.encoded_lang_train = self.language_goal(self.train_lang_emb)
-            self.encoded_lang_val = self.language_goal(self.val_lang_emb)
 
     @rank_zero_only
     def on_validation_epoch_end(self) -> None:
         logger.info(f"Finished validation epoch {self.current_epoch}")
-
-    def clip_groundtruth(self, seq_feat_vis, idx, use_for_aux_loss):
-        """
-        Compute and log CLIP ground truth metric. Only used in validation step.
-
-        Args:
-            seq_feat_vis: Visual embedding.
-            idx: Episode indices.
-            use_for_aux_loss: Mask of which sequences in the batch to consider for auxiliary loss.
-        """
-        if use_for_aux_loss is not None and not torch.any(use_for_aux_loss):
-            return
-        seq_feat_vis = seq_feat_vis[use_for_aux_loss]
-        gt_tasks = [
-            self.task_to_id[self.lang_data_val["language"]["task"][self.val_dataset.lang_lookup[i]]] for i in idx
-        ]
-        gt_tasks = np.array(gt_tasks)[use_for_aux_loss.cpu().numpy()]
-
-        train_score, train_sr = self._clip_groundtruth_loss(
-            seq_feat_vis, self.encoded_lang_train, self.train_lang_task_ids, gt_tasks
-        )
-        val_score, val_sr = self._clip_groundtruth_loss(
-            seq_feat_vis, self.encoded_lang_val, self.val_lang_task_ids, gt_tasks
-        )
-        self.log("lang_gt/train_gt", train_score, sync_dist=True)
-        self.log("lang_gt/val_gt", val_score, sync_dist=True)
-        self.log("lang_gt/train_sr", train_sr, sync_dist=True)
-        self.log("lang_gt/val_sr", val_sr, sync_dist=True)
-
-    def _clip_groundtruth_loss(self, seq_feat_vis, encoded_lang, task_ids, gt_tasks):
-        """
-        Compute CLIP loss with ground truth labels instead of self-supervised with a shifted batch. Only used as metric
-        in validation step.
-
-        Args:
-            seq_feat_vis: Visual embedding.
-            encoded_lang: Encoded language instructions of batch.
-            task_ids:
-            gt_tasks: Ground truth task ids.
-
-        Returns:
-            loss: Ground truth CLIP loss.
-            sr: Success rate of correctly predicted task ids.
-        """
-        image_features, lang_features = self.proj_vis_lang(seq_feat_vis, encoded_lang)
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_features = lang_features / lang_features.norm(dim=-1, keepdim=True)
-        # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-
-        scores = logits_per_image
-        scores -= torch.min(scores, dim=1)[0].unsqueeze(1)
-        scores /= torch.max(scores, dim=1)[0].unsqueeze(1) - torch.min(scores, dim=1)[0].unsqueeze(1)
-
-        loss = []
-
-        for score, gt_task in zip(scores, gt_tasks):
-            positive_ids = np.where(task_ids == gt_task)[0]
-            negative_ids = np.where(task_ids != gt_task)[0]
-            loss.append(torch.sum(score[positive_ids]) - torch.sum(score[negative_ids]))
-
-        loss = torch.mean(torch.stack(loss))
-
-        sr = np.mean(task_ids[torch.argmax(scores, dim=1).cpu()] == gt_tasks)
-        return loss, sr
 
     def training_step(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
         """
@@ -789,10 +590,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
         Returns:
             loss tensor
         """
-        action_loss, proprio_loss, lang_pred_loss, lang_contrastive_loss, lang_clip_loss, total_loss = (
-            torch.tensor(0.0).to(self.device),
-            torch.tensor(0.0).to(self.device),
-            torch.tensor(0.0).to(self.device),
+        action_loss, proprio_loss, total_loss = (
             torch.tensor(0.0).to(self.device),
             torch.tensor(0.0).to(self.device),
             torch.tensor(0.0).to(self.device),
@@ -858,36 +656,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
                 on_epoch=True,
                 batch_size=total_bs,
             )
-        if self.use_bc_z_auxiliary_loss:
-            total_loss = total_loss + self.bc_z_auxiliary_loss_beta * lang_pred_loss
-            self.log(
-                "train/pred_lang",
-                self.bc_z_auxiliary_loss_beta * lang_pred_loss,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch_size["aux_lang"],
-                sync_dist=True,
-            )
-        if self.use_mia_auxiliary_loss:
-            total_loss = total_loss + self.mia_auxiliary_loss_beta * lang_contrastive_loss
-            self.log(
-                "train/lang_contrastive",
-                self.mia_auxiliary_loss_beta * lang_contrastive_loss,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch_size["aux_lang"],
-                sync_dist=True,
-            )
-        if self.use_clip_auxiliary_loss:
-            total_loss = total_loss + self.clip_auxiliary_loss_beta * lang_clip_loss
-            self.log(
-                "train/lang_clip_loss",
-                self.clip_auxiliary_loss_beta * lang_clip_loss,
-                on_step=False,
-                on_epoch=True,
-                batch_size=batch_size["aux_lang"],
-                sync_dist=True,
-            )
+
         self.log("train/action_loss", action_loss, on_step=False, on_epoch=True, batch_size=total_bs)
         self.log("train/total_loss", total_loss, on_step=False, on_epoch=True, batch_size=total_bs)
         return total_loss
@@ -928,13 +697,10 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             perceptual_emb = self.perceptual_encoder(
                 dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
             )
+            latent_goal = self.visual_goal(perceptual_emb[:, -1])
             if self.state_recons:
                 state_recon_loss = self.perceptual_encoder.state_reconstruction_loss()
                 self.log(f"val/proprio_loss_{self.modality_scope}", state_recon_loss, sync_dist=True)
-            if "lang" in self.modality_scope:
-                latent_goal = self.language_goal(dataset_batch["lang"])
-            else:
-                latent_goal = self.visual_goal(perceptual_emb[:, -1])
 
             robot_obs = dataset_batch["state_info"]["robot_obs"]
             actions = dataset_batch["actions"]
@@ -953,25 +719,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
             gripper_discrete[m] = 1
             gripper_discrete[~m] = -1
             gripper_sr = torch.mean((gt_gripper_act == gripper_discrete).float())
-            _, seq_feat = self.plan_recognition(perceptual_emb)
 
-            if "lang" in self.modality_scope:
-                if self.use_bc_z_auxiliary_loss:
-                    val_pred_lang_loss = self.bc_z_auxiliary_loss(
-                        seq_feat, dataset_batch["lang"], dataset_batch["use_for_aux_lang_loss"]
-                    )
-                    self.log("val/lang_pred_loss", val_pred_lang_loss, sync_dist=True)
-                if self.use_clip_auxiliary_loss:
-                    val_pred_clip_loss = self.clip_auxiliary_loss(
-                        seq_feat, latent_goal, dataset_batch["use_for_aux_lang_loss"]
-                    )
-                    self.log("val/val_pred_clip_loss", val_pred_clip_loss, sync_dist=True)
-                    self.clip_groundtruth(seq_feat, dataset_batch["idx"], dataset_batch["use_for_aux_lang_loss"])
-                if self.use_mia_auxiliary_loss:
-                    val_pred_contrastive_loss = self.mia_auxiliary_loss(
-                        seq_feat, latent_goal, dataset_batch["use_for_aux_lang_loss"]
-                    )
-                    self.log("val/lang_contrastive_loss", val_pred_contrastive_loss, sync_dist=True)
             val_total_act_loss += action_loss
             mae_mean = mae.mean()
             pos_mae = mae[..., :3].mean()
