@@ -128,11 +128,11 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         if distribution.dist == "discrete":
             plan_proposal.plan_features = distribution.class_size * distribution.category_size
             plan_recognition.plan_features = distribution.class_size * distribution.category_size
-            action_decoder.plan_features = 0
+            action_decoder.plan_features = distribution.class_size * distribution.category_size
         elif distribution.dist == "continuous":
             plan_proposal.plan_features = distribution.plan_features
             plan_recognition.plan_features = distribution.plan_features
-            action_decoder.plan_features = 0
+            action_decoder.plan_features = distribution.plan_features
 
     @property
     def num_training_steps(self) -> int:
@@ -363,136 +363,6 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         """Set kl_beta from Callback"""
         self.kl_beta = kl_beta
 
-    def bc_z_auxiliary_loss(self, seq_vis_feat, gt_lang, use_for_aux_loss):
-        """
-        BC-Z style language regression auxiliary loss, adapted from 'BC-Z: Zero-Shot Task Generalization with Robotic
-        Imitation Learning' by Jang et al.
-        Regress the language embedding from visual observations and compare to ground truth language embedding.
-
-        Args:
-            seq_vis_feat: Visual embedding.
-            gt_lang: ground Truth language embedding.
-            use_for_aux_loss: Mask of which sequences in the batch to consider for auxiliary loss.
-
-        Returns:
-            Loss term of cosine distance between predicted language embedding and ground truth language embedding
-        """
-        assert self.bc_z_lang_decoder is not None
-        skip_batch = False
-        if use_for_aux_loss is not None:
-            if not torch.any(use_for_aux_loss):
-                # Hack for avoiding a crash when using ddp. loss gets multiplied with 0 at the end of method to
-                # effectively skip whole batch. We do a dummy forward pass, to prevent ddp from complaining.
-                # see https://github.com/pytorch/pytorch/issues/43259
-                skip_batch = True
-                seq_vis_feat = seq_vis_feat[0:1]
-                gt_lang = gt_lang[0:1]
-            else:
-                seq_vis_feat = seq_vis_feat[use_for_aux_loss]
-                gt_lang = gt_lang[use_for_aux_loss]
-            seq_vis_feat = seq_vis_feat[use_for_aux_loss]
-
-        lang_pred = self.bc_z_lang_decoder(seq_vis_feat)
-        cos_sim = ((lang_pred * gt_lang).sum(-1)) / (
-            torch.linalg.norm(lang_pred, dim=1) * torch.linalg.norm(gt_lang, dim=1)
-        )
-        cos_dist = 1 - cos_sim
-        loss = cos_dist.mean()
-        if skip_batch:
-            loss *= 0
-        return loss
-
-    def mia_auxiliary_loss(self, seq_vis_feat, encoded_lang, use_for_aux_loss):
-        """
-        MIA style cross-modality matching auxiliary loss, adapted from 'Creating Multimodal Interactive Agents with
-        Imitation and Self-Supervised Learning' by Deepmind Interactive Team.
-        Contrastive loss between language goal embedding and visual embedding. Discriminator network predicts
-        probability of image and language being from the same episode.
-        The negative examples are created by shifting the matches in the batch.
-
-        Args:
-            seq_vis_feat: Visual embedding.
-            encoded_lang: Language goal embedding.
-            use_for_aux_loss: Mask of which sequences in the batch to consider for auxiliary loss.
-
-        Returns:
-            Binary cross entropy loss.
-        """
-        assert self.mia_lang_discriminator is not None
-        skip_batch = False
-        if use_for_aux_loss is not None:
-            if not torch.any(use_for_aux_loss):
-                # Hack for avoiding a crash when using ddp. Loss gets multiplied with 0 at the end of method to
-                # effectively skip whole batch. We do a dummy forward pass, to prevent ddp from complaining.
-                # see https://github.com/pytorch/pytorch/issues/43259
-                skip_batch = True
-                seq_vis_feat = seq_vis_feat[0:1]
-                encoded_lang = encoded_lang[0:1]
-            else:
-                seq_vis_feat = seq_vis_feat[use_for_aux_loss]
-                encoded_lang = encoded_lang[use_for_aux_loss]
-        image_features, lang_features = self.proj_vis_lang(seq_vis_feat, encoded_lang)
-        # l2 normalize embeddings?
-
-        pred_pos = self.mia_lang_discriminator(image_features, lang_features)
-        labels_pos = torch.ones(pred_pos.shape, dtype=torch.float32, device=encoded_lang.device)
-        labels_neg = torch.zeros(pred_pos.shape, dtype=torch.float32, device=encoded_lang.device)
-        shifted_lang = torch.roll(lang_features, shifts=1, dims=0)
-        pred_neg = self.mia_lang_discriminator(image_features, shifted_lang)
-        labels = torch.cat([labels_pos, labels_neg], 0)
-        pred = torch.cat([pred_pos, pred_neg], 0)
-        bce_loss = binary_cross_entropy_with_logits(pred, labels)
-        if skip_batch:
-            bce_loss *= 0
-        return bce_loss
-
-    def clip_auxiliary_loss(self, seq_vis_feat, encoded_lang, use_for_aux_loss):
-        """
-        CLIP style contrastive loss, adapted from 'Learning transferable visual models from natural language
-        supervision' by Radford et al.
-        We maximize the cosine similarity between the visual features of the sequence i and the corresponding language
-        features while, at the same time, minimizing the cosine similarity between the current visual features and other
-        language instructions in the same batch.
-
-        Args:
-            seq_vis_feat: Visual embedding.
-            encoded_lang: Language goal embedding.
-            use_for_aux_loss: Mask of which sequences in the batch to consider for auxiliary loss.
-
-        Returns:
-            Contrastive loss.
-        """
-        assert self.use_clip_auxiliary_loss is not None
-        skip_batch = False
-        if use_for_aux_loss is not None:
-            if not torch.any(use_for_aux_loss):
-                # Hack for avoiding a crash when using ddp. Loss gets multiplied with 0 at the end of method to
-                # effectively skip whole batch. We do a dummy forward pass, to prevent ddp from complaining.
-                # see https://github.com/pytorch/pytorch/issues/43259
-                skip_batch = True
-                seq_vis_feat = seq_vis_feat[0:1]
-                encoded_lang = encoded_lang[0:1]
-            else:
-                seq_vis_feat = seq_vis_feat[use_for_aux_loss]
-                encoded_lang = encoded_lang[use_for_aux_loss]
-        image_features, lang_features = self.proj_vis_lang(seq_vis_feat, encoded_lang)
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_features = lang_features / lang_features.norm(dim=-1, keepdim=True)
-
-        # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logits_per_image.t()
-
-        # symmetric loss function
-        labels = torch.arange(logits_per_image.shape[0], device=text_features.device)
-        loss_i = cross_entropy(logits_per_image, labels)
-        loss_t = cross_entropy(logits_per_text, labels)
-        loss = (loss_i + loss_t) / 2
-        if skip_batch:
-            loss *= 0
-        return loss
-
     def predict_with_plan(
         self,
         obs: Dict[str, Any],
@@ -590,53 +460,40 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         Returns:
             loss tensor
         """
-        action_loss, proprio_loss, total_loss = (
+        kl_loss, action_loss, proprio_loss, total_loss = (
+            torch.tensor(0.0).to(self.device),
             torch.tensor(0.0).to(self.device),
             torch.tensor(0.0).to(self.device),
             torch.tensor(0.0).to(self.device),
         )
 
+        encoders_dict = {}
         batch_size: Dict[str, int] = {}
         total_bs = 0
         for self.modality_scope, dataset_batch in batch.items():
             perceptual_emb = self.perceptual_encoder(
                 dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
             )
+            latent_goal = self.visual_goal(perceptual_emb[:, -1])
             if self.state_recons:
                 proprio_loss += self.perceptual_encoder.state_reconstruction_loss()
-            if "lang" in self.modality_scope:
-                latent_goal = self.language_goal(dataset_batch["lang"])
-            else:
-                latent_goal = self.visual_goal(perceptual_emb[:, -1])
 
-            robot_obs = dataset_batch["state_info"]["robot_obs"]
-            actions = dataset_batch["actions"]
-            empty_plan = torch.empty((dataset_batch["actions"].shape[0]), 0).to(self.device)
-            act_loss = self.action_decoder.loss(empty_plan, perceptual_emb, latent_goal, actions, robot_obs)
-            _, seq_feat = self.plan_recognition(perceptual_emb)
-
-            if "lang" in self.modality_scope:
-                if not torch.any(dataset_batch["use_for_aux_lang_loss"]):
-                    batch_size["aux_lang"] = 1
-                else:
-                    batch_size["aux_lang"] = torch.sum(dataset_batch["use_for_aux_lang_loss"]).detach()  # type:ignore
-                    if self.use_bc_z_auxiliary_loss:
-                        lang_pred_loss += self.bc_z_auxiliary_loss(
-                            seq_feat, dataset_batch["lang"], dataset_batch["use_for_aux_lang_loss"]
-                        )
-                    if self.use_clip_auxiliary_loss:
-                        lang_clip_loss += self.clip_auxiliary_loss(
-                            seq_feat, latent_goal, dataset_batch["use_for_aux_lang_loss"]
-                        )
-                    if self.use_mia_auxiliary_loss:
-                        lang_contrastive_loss += self.mia_auxiliary_loss(
-                            seq_feat, latent_goal, dataset_batch["use_for_aux_lang_loss"]
-                        )
+            kl, act_loss, mod_loss, pp_dist, pr_dist, seq_feat = self.lmp_train(
+                perceptual_emb, latent_goal, dataset_batch["actions"], dataset_batch["state_info"]["robot_obs"]
+            )
+            encoders_dict[self.modality_scope] = [pp_dist, pr_dist]
+            kl_loss += kl
             action_loss += act_loss
-            total_loss += act_loss
+            total_loss += mod_loss
             batch_size[self.modality_scope] = dataset_batch["actions"].shape[0]
             total_bs += dataset_batch["actions"].shape[0]
-
+            self.log(
+                f"train/kl_loss_scaled_{self.modality_scope}",
+                kl,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch_size[self.modality_scope],
+            )
             self.log(
                 f"train/action_loss_{self.modality_scope}",
                 act_loss,
@@ -644,7 +501,16 @@ class LMP(pl.LightningModule, CalvinBaseModel):
                 on_epoch=True,
                 batch_size=batch_size[self.modality_scope],
             )
+            self.log(
+                f"train/total_loss_{self.modality_scope}",
+                mod_loss,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch_size[self.modality_scope],
+            )
+
         total_loss = total_loss / len(batch)  # divide accumulated gradients by number of datasets
+        kl_loss = kl_loss / len(batch)
         action_loss = action_loss / len(batch)
         if self.state_recons:
             proprio_loss = proprio_loss / len(batch)
@@ -656,7 +522,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
                 on_epoch=True,
                 batch_size=total_bs,
             )
-
+        self.log("train/kl_loss", kl_loss, on_step=False, on_epoch=True, batch_size=total_bs)
         self.log("train/action_loss", action_loss, on_step=False, on_epoch=True, batch_size=total_bs)
         self.log("train/total_loss", total_loss, on_step=False, on_epoch=True, batch_size=total_bs)
         return total_loss
@@ -692,7 +558,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             episode indices.
         """
         output = {}
-        val_total_act_loss = torch.tensor(0.0).to(self.device)
+        val_total_act_loss_pp = torch.tensor(0.0).to(self.device)
         for self.modality_scope, dataset_batch in batch.items():
             perceptual_emb = self.perceptual_encoder(
                 dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
@@ -702,38 +568,45 @@ class LMP(pl.LightningModule, CalvinBaseModel):
                 state_recon_loss = self.perceptual_encoder.state_reconstruction_loss()
                 self.log(f"val/proprio_loss_{self.modality_scope}", state_recon_loss, sync_dist=True)
 
-            robot_obs = dataset_batch["state_info"]["robot_obs"]
-            actions = dataset_batch["actions"]
-            empty_plan = torch.empty((dataset_batch["actions"].shape[0]), 0).to(self.device)
-            action_loss, sample_act = self.action_decoder.loss_and_act(  # type:  ignore
-                empty_plan, perceptual_emb, latent_goal, actions, robot_obs
+            (
+                sampled_plan_pp,
+                action_loss_pp,
+                sampled_plan_pr,
+                action_loss_pr,
+                kl_loss,
+                mae_pp,
+                mae_pr,
+                gripper_sr_pp,
+                gripper_sr_pr,
+                _,
+            ) = self.lmp_val(
+                perceptual_emb, latent_goal, dataset_batch["actions"], dataset_batch["state_info"]["robot_obs"]
             )
-            mae = torch.nn.functional.l1_loss(
-                sample_act[..., :-1], actions[..., :-1], reduction="none"
-            )  # (batch, seq, 6)
-            mae = torch.mean(mae, 1)  # (batch, 6)
-            # gripper action
-            gripper_discrete = sample_act[..., -1]
-            gt_gripper_act = actions[..., -1]
-            m = gripper_discrete > 0
-            gripper_discrete[m] = 1
-            gripper_discrete[~m] = -1
-            gripper_sr = torch.mean((gt_gripper_act == gripper_discrete).float())
-
-            val_total_act_loss += action_loss
-            mae_mean = mae.mean()
-            pos_mae = mae[..., :3].mean()
-            orn_mae = mae[..., 3:6].mean()
-            self.log(f"val_total_mae/{self.modality_scope}_total_mae", mae_mean, sync_dist=True)
-            self.log(f"val_pos_mae/{self.modality_scope}_pos_mae", pos_mae, sync_dist=True)
-            self.log(f"val_orn_mae/{self.modality_scope}_orn_mae", orn_mae, sync_dist=True)
-            self.log(f"val_act/{self.modality_scope}_act_loss", action_loss, sync_dist=True)
-            self.log(f"val_grip/{self.modality_scope}_grip_sr", gripper_sr, sync_dist=True)
+            val_total_act_loss_pp += action_loss_pp
+            pr_mae_mean = mae_pr.mean()
+            pp_mae_mean = mae_pp.mean()
+            pos_mae_pp = mae_pp[..., :3].mean()
+            pos_mae_pr = mae_pr[..., :3].mean()
+            orn_mae_pp = mae_pp[..., 3:6].mean()
+            orn_mae_pr = mae_pr[..., 3:6].mean()
+            self.log(f"val_total_mae/{self.modality_scope}_total_mae_pr", pr_mae_mean, sync_dist=True)
+            self.log(f"val_total_mae/{self.modality_scope}_total_mae_pp", pp_mae_mean, sync_dist=True)
+            self.log(f"val_pos_mae/{self.modality_scope}_pos_mae_pr", pos_mae_pr, sync_dist=True)
+            self.log(f"val_pos_mae/{self.modality_scope}_pos_mae_pp", pos_mae_pp, sync_dist=True)
+            self.log(f"val_orn_mae/{self.modality_scope}_orn_mae_pr", orn_mae_pr, sync_dist=True)
+            self.log(f"val_orn_mae/{self.modality_scope}_orn_mae_pp", orn_mae_pp, sync_dist=True)
+            self.log(f"val_kl/{self.modality_scope}_kl_loss", kl_loss, sync_dist=True)
+            self.log(f"val_act/{self.modality_scope}_act_loss_pp", action_loss_pp, sync_dist=True)
+            self.log(f"val_act/{self.modality_scope}_act_loss_pr", action_loss_pr, sync_dist=True)
+            self.log(f"val_grip/{self.modality_scope}_grip_sr_pr", gripper_sr_pr, sync_dist=True)
+            self.log(f"val_grip/{self.modality_scope}_grip_sr_pp", gripper_sr_pp, sync_dist=True)
             self.log(
-                "val_act/action_loss",
-                val_total_act_loss / len(self.trainer.datamodule.modalities),  # type:ignore
+                "val_act/action_loss_pp",
+                val_total_act_loss_pp / len(self.trainer.datamodule.modalities),  # type:ignore
                 sync_dist=True,
             )
+            output[f"sampled_plan_pp_{self.modality_scope}"] = sampled_plan_pp
+            output[f"sampled_plan_pr_{self.modality_scope}"] = sampled_plan_pr
             output[f"idx_{self.modality_scope}"] = dataset_batch["idx"]
 
         return output
