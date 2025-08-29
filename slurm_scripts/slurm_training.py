@@ -18,6 +18,7 @@ parser.add_argument("--train_file", type=str, default="../scripts/train_tao.py")
 parser.add_argument("-l", "--log_dir", type=str, default=default_log_dir)
 parser.add_argument("-j", "--job_name", type=str, default="tao_job")
 parser.add_argument("-g", "--gpus", type=int, default=1)
+parser.add_argument("-c", "--cpus_per_task", type=int, default=8)
 parser.add_argument("--mem", type=int, default=0)  # 0 means no memory limit
 parser.add_argument("-v", "--venv", type=str)
 parser.add_argument("-p", "--partition", type=str, default="alldlc2_gpu-l40s")
@@ -79,7 +80,7 @@ job_opts = {
     "script": f"{args.script.as_posix()} {args.venv} {args.train_file.as_posix()} {log_dir.as_posix()} {args.gpus} {' '.join(unknownargs)}",
     "partition": args.partition,
     "ntasks-per-node": str(args.gpus),
-    "cpus-per-task": str(args.gpus * 8),
+    "cpus-per-task": str(args.cpus_per_task),
     "gres": f"gpu:{args.gpus}",
     "nodes": str(1),
     "output": os.path.join(log_dir, "%x.%N.%j.out"),
@@ -146,7 +147,7 @@ def create_eval_script():
         "partition": args.partition,
         "mem": args.mem,
         "ntasks-per-node": str(1),
-        "cpus-per-task": str(args.gpus * 8),
+        "cpus-per-task": str(args.cpus_per_task),
         "gres": f"gpu:{args.gpus}",
         "nodes": str(1),
         "output": os.path.join(eval_log_dir, "%x.%N.%j.out"),
