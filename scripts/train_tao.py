@@ -19,7 +19,7 @@ from pytorch_lightning.loggers import Logger
 from pytorch_lightning.utilities import rank_zero_only
 
 import taowm
-import taowm.models.gcbc as models_m
+from taowm.models import MODEL_REGISTRY
 from taowm.utils.utils import initialize_pretrained_weights
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,8 @@ def train(cfg: DictConfig) -> None:
     # Load or create Model
     chk = get_last_checkpoint(Path(cfg.exp_dir))
     if chk is not None:
-        model = getattr(models_m, cfg.model["_target_"].split(".")[-1]).load_from_checkpoint(chk.as_posix())
+        model_class = MODEL_REGISTRY[cfg.model["_target_"]]
+        model = model_class.load_from_checkpoint(chk.as_posix())
     else:
         model = hydra.utils.instantiate(cfg.model)
         if "pretrain_chk" in cfg:
@@ -82,6 +83,21 @@ def train(cfg: DictConfig) -> None:
 
     # Start training
     trainer.fit(model, datamodule=datamodule, ckpt_path=chk)  # type: ignore
+
+
+def get_model_class_from_checkpoint(checkpoint_path: str) -> LightningModule:
+    """
+    Get the model class from a checkpoint file.
+
+    Args:
+        checkpoint_path: Path to the checkpoint file.
+
+    Returns:
+        The model class.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model_name = checkpoint["hyper_parameters"]["model"]["_target_"].split(".")[-1]
+    return MODEL_REGISTRY[model_name]
 
 
 def setup_callbacks(callbacks_cfg: DictConfig) -> List[Callback]:
