@@ -232,6 +232,7 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
                 on_step=False,
                 on_epoch=True,
                 batch_size=batch_size[self.modality_scope],
+                sync_dist=True,
             )
         total_loss = total_loss / len(batch)  # divide accumulated gradients by number of datasets
         action_loss = action_loss / len(batch)
@@ -244,9 +245,10 @@ class GCBC(pl.LightningModule, CalvinBaseModel):
                 on_step=False,
                 on_epoch=True,
                 batch_size=total_bs,
+                sync_dist=True,
             )
-        self.log("train/action_loss", action_loss, on_step=False, on_epoch=True, batch_size=total_bs)
-        self.log("train/total_loss", total_loss, on_step=False, on_epoch=True, batch_size=total_bs)
+        self.log("train/action_loss", action_loss, on_step=False, on_epoch=True, batch_size=total_bs, sync_dist=True)
+        self.log("train/total_loss", total_loss, on_step=False, on_epoch=True, batch_size=total_bs, sync_dist=True)
         return total_loss
 
     def validation_step(self, batch: Dict[str, Dict], batch_idx: int) -> Dict[str, torch.Tensor]:  # type: ignore
