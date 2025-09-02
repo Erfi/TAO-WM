@@ -42,3 +42,7 @@ python scripts/train_wm.py
 ```bash
 python scripts/featurizer.py
 ```
+### 6. Evaluate Taowm
+```bash
+python scripts/evaluate_tao.py --dataset_path /home/basiri/Dev/TAO-WM/dataset/calvin_data --train_folder /home/basiri/Dev/TAO-WM/logs/runs/2025-08-25/18-38-21 --start_end_tasks  /home/basiri/Dev/TAO-WM/dataset/calvin_data/start_end_tasks.json --eval_log_dir /home/basiri/Dev/TAO-WM/logs/evaluations --num_sequences 100 --num_tasks_per_seq 5
+```

@@ -49,7 +49,8 @@ def train(cfg: DictConfig) -> None:
     # Load or create Model
     chk = get_last_checkpoint(Path(cfg.exp_dir))
     if chk is not None:
-        model_class = MODEL_REGISTRY[cfg.model["_target_"]]
+        model_class = MODEL_REGISTRY.get(cfg.model._target_, None)
+        assert model_class is not None, f"Model class {cfg.model._target_} not found in MODEL_REGISTRY"
         model = model_class.load_from_checkpoint(chk.as_posix())
     else:
         model = hydra.utils.instantiate(cfg.model)
@@ -83,21 +84,6 @@ def train(cfg: DictConfig) -> None:
 
     # Start training
     trainer.fit(model, datamodule=datamodule, ckpt_path=chk)  # type: ignore
-
-
-def get_model_class_from_checkpoint(checkpoint_path: str) -> LightningModule:
-    """
-    Get the model class from a checkpoint file.
-
-    Args:
-        checkpoint_path: Path to the checkpoint file.
-
-    Returns:
-        The model class.
-    """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    model_name = checkpoint["hyper_parameters"]["model"]["_target_"].split(".")[-1]
-    return MODEL_REGISTRY[model_name]
 
 
 def setup_callbacks(callbacks_cfg: DictConfig) -> List[Callback]:
