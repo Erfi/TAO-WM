@@ -5,18 +5,19 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List, Union
 
-from lightning_lite.accelerators.cuda import num_cuda_devices
-from pytorch_lightning.strategies import DDPStrategy
-
-# This is for using the locally installed repo clone when using slurm
-sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
-from calvin_agent.utils.utils import get_git_commit_hash, get_last_checkpoint, print_system_env_info
 import hydra
 from omegaconf import DictConfig, ListConfig, OmegaConf
-from pytorch_lightning import Callback, LightningModule, seed_everything, Trainer
+from lightning_lite.accelerators.cuda import num_cuda_devices
+from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning import Callback, seed_everything, Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import Logger
 from pytorch_lightning.utilities import rank_zero_only
+
+# This is for using the locally installed repo clone when using slurm
+sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
+from lumos.utils.info_utils import setup_tensor_cores
+from calvin_agent.utils.utils import get_git_commit_hash, get_last_checkpoint, print_system_env_info
 
 import taowm
 from taowm.models import MODEL_REGISTRY
@@ -42,6 +43,11 @@ def train(cfg: DictConfig) -> None:
 
     # sets seeds for numpy, torch, python.random and PYTHONHASHSEED.
     seed_everything(cfg.seed, workers=True)  # type: ignore
+
+    # Setup Tensor Cores if available
+    if setup_tensor_cores(enabled=cfg.tc_enabled, precision=cfg.tc_precision):
+        log_rank_0("Tensor Cores detected and configured for optimal performance")
+        log_rank_0(f"Using matmul precision: {cfg.tc_precision}")
 
     # Instantiate DataModule
     datamodule = hydra.utils.instantiate(cfg.datamodule, training_repo_root=Path(taowm.__file__).parents[1])

@@ -6,6 +6,8 @@ import torch.nn as nn
 
 from taowm.models.decoders.action_decoder import ActionDecoder
 from taowm.models.decoders.utils.gripper_control import tcp_to_world_frame, world_to_tcp_frame
+from taowm.models.decoders.utils.rnn import gru_decoder, lstm_decoder, mlp_decoder, rnn_decoder  # needed for line 40
+
 
 logger = logging.getLogger(__name__)
 

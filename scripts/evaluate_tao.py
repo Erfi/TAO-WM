@@ -67,7 +67,6 @@ def main():
     checkpoints = []
     if args.checkpoints is None and args.last_k_checkpoints is None and args.checkpoint is None:
         logger.info("Evaluating model with last checkpoint.")
-        breakpoint()
         checkpoints = [get_last_checkpoint(Path(args.train_folder))]
     elif args.checkpoints is not None:
         logger.info(f"Evaluating model with checkpoints {args.checkpoints}.")

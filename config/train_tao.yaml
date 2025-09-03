@@ -1,5 +1,6 @@
 defaults:
   - setup
+  - tensor_cores
   - callbacks: default
   - datamodule: lmp
   - model: lmp
