@@ -1,0 +1,12 @@
+defaults:
+  - datasets: goal_augmented_vision_only
+  - transforms: rand_shift
+  - proprioception_dims: robot_no_joints #robot_full
+  - observation_space: rgb_static_gripper_robot_rel_action
+_target_: calvin_agent.datasets.calvin_data_module.CalvinDataModule # TODO: change this for tacorl?
+_recursive_: false
+root_data_dir: ???
+action_space: 7
+action_max: [1., 1., 1., 1., 1., 1., 1.,]
+action_min: [-1., -1., -1., -1., -1., -1., -1]
+shuffle_val: false

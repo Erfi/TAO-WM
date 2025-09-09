@@ -1,0 +1,15 @@
+_target_: taowm.datasets.goal_augmented_disk_dataset.GoalAugmentedDiskDataset
+key: "vis"
+save_format: "npz"
+batch_size: 32
+min_window_size: 8
+max_window_size: 16
+proprio_state: ${datamodule.proprioception_dims}
+obs_space: ${datamodule.observation_space}
+pad: true
+lang_folder: null
+num_workers: 0
+geom_sampling_prob: 0.3
+geom_sampling_window_stride: True # if true, goal <- (idx + delta * window_size), else (idx + delta + window_size)
+hard_negatives_ratio: 0.1
+hard_negatives_file: ${oc.env:TAO_DATA_DIR}/calvin_data/nn_steps_from_step.json
