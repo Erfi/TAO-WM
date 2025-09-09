@@ -1,0 +1,3 @@
+defaults:
+  - vision_dataset: goal_augmented_vision_shm
+
