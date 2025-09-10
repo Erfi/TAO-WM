@@ -7,7 +7,7 @@ proprio_state: ${datamodule.proprioception_dims}
 obs_space: ${datamodule.observation_space}
 pad: true
 lang_folder: null
-num_workers: 0
+num_workers: 8
 geom_sampling_prob: 0.3
 geom_sampling_window_stride: True # if true, goal <- (idx + delta * window_size), else (idx + delta + window_size)
 hard_negatives_ratio: 0.1

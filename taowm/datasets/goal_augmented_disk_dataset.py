@@ -39,6 +39,7 @@ class GoalAugmentedDiskDataset(DiskDataset):
         self.hard_negatives_ratio = hard_negatives_ratio
         self.geom_sampling_window_stride = geom_sampling_window_stride
         self.nn_steps_from_step = self.get_nn_steps_from_step(hard_negatives_file) if hard_negatives_file else {}
+        self.ep_start_end_ids = self.get_episode_start_end_ids()
         self.inv_episode_lookup = (
             {step: idx for idx, step in enumerate(self.episode_lookup)} if self.nn_steps_from_step else {}
         )
@@ -87,35 +88,44 @@ class GoalAugmentedDiskDataset(DiskDataset):
         """
         Sample a goal a few window sizes away using a geometric distribution delta.
         """
+        seq_start = self.episode_lookup[idx]
+        episode_end = self.find_episode_end(seq_start)
+        if episode_end is None:
+            logger.info("Could not find episode end in geometric sampling. Sampling a random goal.")
+            return self._sample_random_goal()
+        else:
+            episode_end -= self.min_window_size  # last valid start for goal
         delta = np.random.default_rng().geometric(p=self.geom_sampling_prob)
         if self.geom_sampling_window_stride:
-            goal_idx = idx + (window_size - 1) * delta
+            goal_step = seq_start + (window_size - 1) * delta
         else:
-            goal_idx = idx + (window_size - 1) + delta
-        if (goal_idx >= len(self.episode_lookup)) or (
-            self.episode_lookup[goal_idx] - self.episode_lookup[idx] != goal_idx - idx
-        ):
-            # if goal index is outside of episode
-            # or if goal index is from a different episode
-            logger.info("Geometric sampling failed. sampling a random goal.")
+            goal_step = seq_start + (window_size - 1) + delta
+        goal_step = min(goal_step, episode_end)
+        goal_idx = self.inv_episode_lookup.get(goal_step, None)
+        if goal_idx is None:
+            logger.info("No valid goal index found in geometric sampling. Sampling a random goal.")
             return self._sample_random_goal()
         return self._get_sequences(idx=goal_idx, window_size=1)
 
     def _sample_hard_negative_goal(self, idx: int, window_size: int):
+        MAX_TRIES = 3
         end_step = self.episode_lookup[idx] + window_size - 1
         negative_samples = self.nn_steps_from_step.get(end_step, [])
         if not negative_samples:
             logger.info("No hard negative samples found. Sampling a random goal.")
             return self._sample_random_goal()
-        goal_step = np.random.choice(negative_samples)
-        goal_idx = self.inv_episode_lookup.get(goal_step, None)
-        if goal_idx is None:
-            logger.info("No valid hard_negative goal index found. Sampling a random goal.")
+        for _ in range(MAX_TRIES):
+            goal_step = np.random.choice(negative_samples)
+            goal_idx = self.inv_episode_lookup.get(goal_step, None)
+            if goal_idx is not None:
+                break
+        else:
+            logger.info(f"No valid hard_negative goal index found after {MAX_TRIES} tries. Sampling a random goal.")
             return self._sample_random_goal()
         return self._get_sequences(idx=goal_idx, window_size=1)
 
     def _sample_random_goal(self):
-        file_idx = np.random.choice(self.episode_lookup)
+        file_idx = np.random.randint(0, len(self.episode_lookup) - 1)
         return self._get_sequences(idx=file_idx, window_size=1)
 
     def get_nn_steps_from_step(self, hard_negatives_file: str) -> Dict[int, list[int]]:
@@ -127,8 +137,28 @@ class GoalAugmentedDiskDataset(DiskDataset):
         if nn_steps_from_step_path.is_file():
             with open(nn_steps_from_step_path) as f:
                 nn_steps_from_step = json.load(f)
+        else:
+            logger.warning(f"Hard negatives file not found at {nn_steps_from_step_path}.")
+            return {}
 
         data_type = "validation" if self.validation else "train"
         if data_type in nn_steps_from_step:
             nn_steps_from_step = {int(k): v for k, v in nn_steps_from_step[data_type].items()}  # maps str -> int
         return nn_steps_from_step
+
+    def get_episode_start_end_ids(self) -> Dict[int, Tuple[int, int]]:
+        file_path = self.abs_datasets_dir / "ep_start_end_ids.npy"
+        if file_path.exists() and file_path.is_file():
+            start_end_ids = np.load(self.abs_datasets_dir / "ep_start_end_ids.npy")
+            return start_end_ids
+        else:
+            logger.warning(f"Episode start-end ids file not found at {file_path}.")
+            return None
+
+    def find_episode_end(self, step):
+        # Efficient vectorized search using numpy
+        mask = (self.ep_start_end_ids[:, 0] <= step) & (step <= self.ep_start_end_ids[:, 1])
+        idx = np.where(mask)[0]
+        if idx.size > 0:
+            return self.ep_start_end_ids[idx[0], 1]
+        return None
