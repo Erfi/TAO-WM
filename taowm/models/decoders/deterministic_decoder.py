@@ -24,14 +24,17 @@ class DeterministicDecoder(ActionDecoder):
         criterion: str,
         num_layers: int,
         rnn_model: str,
-        perceptual_emb_slice: tuple,
         gripper_control: bool,
+        perceptual_emb_slice: tuple = None,
     ):
         super(DeterministicDecoder, self).__init__()
         self.plan_features = plan_features
         self.gripper_control = gripper_control
         self.out_features = out_features
-        in_features = (perceptual_emb_slice[1] - perceptual_emb_slice[0]) + latent_goal_features + plan_features
+        if perceptual_emb_slice is not None:
+            in_features = (perceptual_emb_slice[1] - perceptual_emb_slice[0]) + latent_goal_features + plan_features
+        else:
+            in_features = perceptual_features + latent_goal_features + plan_features
         self.rnn = eval(rnn_model)
         self.rnn = self.rnn(in_features, hidden_size, num_layers, policy_rnn_dropout_p)
         self.actions = nn.Sequential(nn.Linear(hidden_size, out_features), nn.Tanh())
@@ -46,14 +49,17 @@ class DeterministicDecoder(ActionDecoder):
         self,
         latent_plan: torch.Tensor,
         perceptual_emb: torch.Tensor,
-        latent_goal: torch.Tensor,
+        latent_goal: torch.Tensor = None,
         h_0: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         perceptual_emb = perceptual_emb[..., slice(*self.perceptual_emb_slice)]
         batch_size, seq_len = perceptual_emb.shape[0], perceptual_emb.shape[1]
         latent_plan = latent_plan.unsqueeze(1).expand(-1, seq_len, -1) if latent_plan.nelement() > 0 else latent_plan
-        latent_goal = latent_goal.unsqueeze(1).expand(-1, seq_len, -1)
-        x = torch.cat([latent_plan, perceptual_emb, latent_goal], dim=-1)  # b, s, (plan + visuo-propio + goal)
+        if latent_goal is not None:
+            latent_goal = latent_goal.unsqueeze(1).expand(-1, seq_len, -1)
+            x = torch.cat([latent_plan, perceptual_emb, latent_goal], dim=-1)  # b, s, (plan + visuo-propio + goal)
+        else:
+            x = torch.cat([latent_plan, perceptual_emb], dim=-1)  # b, s, (plan + visuo-propio)
         if not isinstance(self.rnn, nn.Sequential) and isinstance(self.rnn, nn.RNNBase):
             x, h_n = self.rnn(x, h_0)
         else:

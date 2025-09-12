@@ -1,4 +1,4 @@
-kl_beta: 0.01
+kl_beta: 0.001
 state_recon_beta: 0.5
 kl_balancing_mix: 0.8
 bc_z_auxiliary_loss_beta: 1.0

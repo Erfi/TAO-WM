@@ -261,15 +261,18 @@ class LogisticDecoderRNN(ActionDecoder):
         self,
         latent_plan: torch.Tensor,
         perceptual_emb: torch.Tensor,
-        latent_goal: torch.Tensor,
+        latent_goal: torch.Tensor = None,
         h_0: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if self.perceptual_emb_slice is not None:
             perceptual_emb = perceptual_emb[..., slice(*self.perceptual_emb_slice)]
         batch_size, seq_len = perceptual_emb.shape[0], perceptual_emb.shape[1]
         latent_plan = latent_plan.unsqueeze(1).expand(-1, seq_len, -1)
-        latent_goal = latent_goal.unsqueeze(1).expand(-1, seq_len, -1)
-        x = torch.cat([latent_plan, perceptual_emb, latent_goal], dim=-1)  # b, s, (plan + visuo-propio + goal)
+        if latent_goal is not None:
+            latent_goal = latent_goal.unsqueeze(1).expand(-1, seq_len, -1)
+            x = torch.cat([latent_plan, perceptual_emb, latent_goal], dim=-1)  # b, s, (plan + visuo-propio + goal)
+        else:
+            x = torch.cat([latent_plan, perceptual_emb], dim=-1)  # b, s, (plan + visuo-propio)
         if not isinstance(self.rnn, nn.Sequential) and isinstance(self.rnn, nn.RNNBase):
             x, h_n = self.rnn(x, h_0)
         else:

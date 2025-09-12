@@ -6,10 +6,16 @@ from torch.distributions import Independent, Normal, OneHotCategoricalStraightTh
 import torch.nn as nn
 import torch.nn.functional as F
 
+from taowm.utils.custom_distributions import TanhNormal
+
 DiscState = namedtuple("DiscState", ["logit"])
 ContState = namedtuple("ContState", ["mean", "std"])
 
 State = Union[DiscState, ContState]
+BASE_CONT_DIST_MAP = {
+    "Normal": Normal,
+    "TanhNormal": TanhNormal,
+}
 
 
 class Distribution:
@@ -19,6 +25,10 @@ class Distribution:
         if self.dist == "discrete":
             self.category_size = kwargs.get("category_size")
             self.class_size = kwargs.get("class_size")
+        elif self.dist == "continuous":
+            self.base_dist = kwargs.get("base_dist")
+            assert self.base_dist in BASE_CONT_DIST_MAP.keys()
+            self.base_dist_class = BASE_CONT_DIST_MAP[self.base_dist]
 
     def get_dist(self, state):
         if self.dist == "discrete":
@@ -26,7 +36,7 @@ class Distribution:
             logits = torch.reshape(state.logit, shape=(*shape[:-1], self.category_size, self.class_size))
             return Independent(OneHotCategoricalStraightThrough(logits=logits), 1)
         elif self.dist == "continuous":
-            return Independent(Normal(state.mean, state.std), 1)
+            return Independent(self.base_dist_class(state.mean, state.std), 1)
 
     def detach_state(self, state):
         if self.dist == "discrete":

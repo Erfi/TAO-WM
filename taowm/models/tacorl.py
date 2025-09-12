@@ -24,9 +24,11 @@ def log_rank_0(*args, **kwargs):
     logger.info(*args, **kwargs)
 
 
-class LMP(pl.LightningModule, CalvinBaseModel):
+class TACORL(pl.LightningModule, CalvinBaseModel):
     """
-    The lightning module used for training Play-LMP (Play-Supervised Latent Motor Plans: https://arxiv.org/abs/1903.01973).
+    The lightning module used for training TACO-RL (Latent Plans for Task-Agnostic Offline Reinforcement Learning: https://arxiv.org/abs/2209.08959).
+    TACO-RL is a hierarchical method where the lower-level policy is similar to Play-LMP
+    and the higher-level policy is trained via RL to stick the plans together for long-horizon tasks.
 
     Args:
         perceptual_encoder: DictConfig for perceptual_encoder.
@@ -35,6 +37,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         distribution: DictConfig for plan distribution (continuous or discrete).
         visual_goal: DictConfig for visual_goal encoder.
         action_decoder: DictConfig for action_decoder.
+        critic: DictConfig for critic network.
         kl_beta: Weight for KL loss term.
         kl_balancing_mix: Weight for KL balancing (as in https://arxiv.org/pdf/2010.02193.pdf).
         state_recons: If True, use state reconstruction auxiliary loss.
@@ -42,6 +45,8 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         optimizer: DictConfig for optimizer.
         lr_scheduler: DictConfig for learning rate scheduler.
         replan_freq: After how many steps generate new plan (only for inference).
+        enable_goal_conditioned_action_decoder: If True, action decoder receives latent goal as additional input.
+        train_low_level: If True, train the low-level policy using IL, otherwise train the high-level policy using RL.
     """
 
     def __init__(
@@ -52,6 +57,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         distribution: DictConfig,
         visual_goal: DictConfig,
         action_decoder: DictConfig,
+        critic: DictConfig,
         kl_beta: float,
         kl_balancing_mix: float,
         state_recons: bool,
@@ -59,8 +65,11 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
         replan_freq: int = 30,
+        enable_goal_conditioned_action_decoder: bool = True,
+        train_low_level: bool = True,
     ):
-        super(LMP, self).__init__()
+        super(TACORL, self).__init__()
+        self.enable_goal_conditioned_action_decoder = enable_goal_conditioned_action_decoder
         self.perceptual_encoder = hydra.utils.instantiate(perceptual_encoder, device=self.device)
         self.setup_input_sizes(
             self.perceptual_encoder,
@@ -69,6 +78,8 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             visual_goal,
             action_decoder,
             distribution,
+            critic,
+            enable_goal_conditioned_action_decoder,
         )
         # plan networks
         self.dist = hydra.utils.instantiate(distribution)
@@ -77,6 +88,9 @@ class LMP(pl.LightningModule, CalvinBaseModel):
 
         # goal encoders
         self.visual_goal = hydra.utils.instantiate(visual_goal)
+
+        # critic network
+        self.critic = hydra.utils.instantiate(critic)
 
         # policy network
         self.action_decoder: ActionDecoder = hydra.utils.instantiate(action_decoder)
@@ -91,6 +105,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         self.modality_scope = "vis"
         self.optimizer_config = optimizer
         self.lr_scheduler = lr_scheduler
+        self.train_low_level = train_low_level
 
         self.save_hyperparameters()
 
@@ -108,6 +123,8 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         visual_goal,
         action_decoder,
         distribution,
+        critic,
+        enable_goal_conditioned_action_decoder: bool,
     ):
         """
         Configure the input feature sizes of the respective parts of the network.
@@ -119,20 +136,29 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             visual_goal: DictConfig for visual goal encoder.
             action_decoder: DictConfig for action decoder network.
             distribution: DictConfig for plan distribution (continuous or discrete).
+            critic: DictConfig for critic network. High-Level critic uses plan features as action features.
+            enable_goal_conditioned_action_decoder: If True, action decoder / critic receives latent goal as additional input.
         """
         plan_proposal.perceptual_features = perceptual_encoder.latent_size
         plan_recognition.in_features = perceptual_encoder.latent_size
         visual_goal.in_features = perceptual_encoder.latent_size
         action_decoder.perceptual_features = perceptual_encoder.latent_size
+        critic.perceptual_features = perceptual_encoder.latent_size
+
+        if not enable_goal_conditioned_action_decoder:
+            action_decoder.latent_goal_features = 0
+            critic.latent_goal_features = 0
 
         if distribution.dist == "discrete":
             plan_proposal.plan_features = distribution.class_size * distribution.category_size
             plan_recognition.plan_features = distribution.class_size * distribution.category_size
             action_decoder.plan_features = distribution.class_size * distribution.category_size
+            critic.action_features = distribution.class_size * distribution.category_size
         elif distribution.dist == "continuous":
             plan_proposal.plan_features = distribution.plan_features
             plan_recognition.plan_features = distribution.plan_features
             action_decoder.plan_features = distribution.plan_features
+            critic.action_features = distribution.plan_features
 
     @property
     def num_training_steps(self) -> int:
@@ -199,7 +225,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
 
-    def lmp_train(
+    def low_level_train(
         self, perceptual_emb: torch.Tensor, latent_goal: torch.Tensor, train_acts: torch.Tensor, robot_obs: torch.Tensor
     ) -> Tuple[
         torch.Tensor,
@@ -239,14 +265,18 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             sampled_plan = torch.flatten(sampled_plan, start_dim=-2, end_dim=-1)
 
         action_loss = self.action_decoder.loss(
-            sampled_plan, perceptual_emb, latent_goal, train_acts, robot_obs
+            latent_plan=sampled_plan,
+            perceptual_emb=perceptual_emb,
+            latent_goal=latent_goal if self.enable_goal_conditioned_action_decoder else None,
+            actions=train_acts,
+            robot_obs=robot_obs,
         )  # type:  ignore
         kl_loss = self.compute_kl_loss(pp_state, pr_state)
         total_loss = action_loss + kl_loss
 
         return kl_loss, action_loss, total_loss, pp_dist, pr_dist, seq_feat
 
-    def lmp_val(
+    def low_level_val(
         self, perceptual_emb: torch.Tensor, latent_goal: torch.Tensor, actions: torch.Tensor, robot_obs: torch.Tensor
     ) -> Tuple[
         torch.Tensor,
@@ -288,7 +318,11 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         # ------------ Policy network ------------ #
         sampled_plan_pp = self.dist.sample_latent_plan(pp_dist)  # sample from proposal net
         action_loss_pp, sample_act_pp = self.action_decoder.loss_and_act(  # type:  ignore
-            sampled_plan_pp, perceptual_emb, latent_goal, actions, robot_obs
+            latent_plan=sampled_plan_pp,
+            perceptual_emb=perceptual_emb,
+            latent_goal=latent_goal if self.enable_goal_conditioned_action_decoder else None,
+            actions=actions,
+            robot_obs=robot_obs,
         )
 
         mae_pp = torch.nn.functional.l1_loss(
@@ -308,7 +342,11 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         pr_dist = self.dist.get_dist(pr_state)
         sampled_plan_pr = self.dist.sample_latent_plan(pr_dist)  # sample from recognition net
         action_loss_pr, sample_act_pr = self.action_decoder.loss_and_act(  # type:  ignore
-            sampled_plan_pr, perceptual_emb, latent_goal, actions, robot_obs
+            latent_plan=sampled_plan_pr,
+            perceptual_emb=perceptual_emb,
+            latent_goal=latent_goal if self.enable_goal_conditioned_action_decoder else None,
+            actions=actions,
+            robot_obs=robot_obs,
         )
         mae_pr = torch.nn.functional.l1_loss(
             sample_act_pr[..., :-1], actions[..., :-1], reduction="none"
@@ -333,6 +371,74 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             gripper_sr_pp,
             gripper_sr_pr,
             seq_feat,
+        )
+
+    def high_level_train(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        pass
+
+    def high_level_val(
+        self, perceptual_emb: torch.Tensor, latent_goal: torch.Tensor, actions: torch.Tensor, robot_obs: torch.Tensor
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        NamedTuple,
+    ]:
+        """
+        Main forward pass for higher level validation step after encoding raw inputs.
+
+        Args:
+            perceptual_emb: Encoded input modalities.
+            latent_goal: Goal embedding (visual or language goal).
+            actions: Groundtruth actions.
+            robot_obs: Unnormalized proprioceptive state (only used for world to tcp frame conversion in decoder).
+
+        Returns:
+            sampled_plan_pp: Plan sampled from plan proposal network.
+            actor_loss: Actor loss for the high level policy (using plan proposal network as the actor)
+            critic_loss: Critic loss (Bellman loss)for the high level policy (using plan proposal network as the actor)
+            mae_pp: Mean absolute error (L1) of action sampled with input from plan proposal network w.r.t ground truth.
+            gripper_sr_pp: Success rate of binary gripper action sampled with input from plan proposal network.
+            seq_feat: Features of plan recognition network before distribution.
+        """
+        # ------------Plan Proposal------------ #
+        pp_state = self.plan_proposal(perceptual_emb[:, 0], latent_goal)  # (batch, 256) each
+        pp_dist = self.dist.get_dist(pp_state)
+
+        # ------------ Policy network ------------ #
+        sampled_plan_pp = self.dist.sample_latent_plan(pp_dist)  # sample from proposal net (Actor)
+        # TODO: Critic Loss using
+        action_loss_pp, sample_act_pp = self.action_decoder.loss_and_act(  # type:  ignore
+            latent_plan=sampled_plan_pp,
+            perceptual_emb=perceptual_emb,
+            latent_goal=latent_goal if self.enable_goal_conditioned_action_decoder else None,
+            actions=actions,
+            robot_obs=robot_obs,
+        )
+
+        mae_pp = torch.nn.functional.l1_loss(
+            sample_act_pp[..., :-1], actions[..., :-1], reduction="none"
+        )  # (batch, seq, 6)
+        mae_pp = torch.mean(mae_pp, 1)  # (batch, 6)
+        # gripper action
+        gripper_discrete_pp = sample_act_pp[..., -1]
+        gt_gripper_act = actions[..., -1]
+        m = gripper_discrete_pp > 0
+        gripper_discrete_pp[m] = 1
+        gripper_discrete_pp[~m] = -1
+        gripper_sr_pp = torch.mean((gt_gripper_act == gripper_discrete_pp).float())
+
+        return (
+            sampled_plan_pp,
+            action_loss_pp,
+            mae_pp,
+            gripper_sr_pp,
         )
 
     def compute_kl_loss(self, pp_state: State, pr_state: State) -> torch.Tensor:
@@ -383,7 +489,10 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         with torch.no_grad():
             perceptual_emb = self.perceptual_encoder(obs["rgb_obs"], obs["depth_obs"], obs["robot_obs"])
             action = self.action_decoder.act(
-                sampled_plan, perceptual_emb, latent_goal, obs["robot_obs_raw"]
+                latent_plan=sampled_plan,
+                perceptual_emb=perceptual_emb,
+                latent_goal=latent_goal if self.enable_goal_conditioned_action_decoder else None,
+                robot_obs=obs["robot_obs_raw"],
             )  # type:  ignore
 
         return action
@@ -431,7 +540,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
     def on_validation_epoch_end(self) -> None:
         logger.info(f"Finished validation epoch {self.current_epoch}")
 
-    def training_step(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
+    def training_step_low_level(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
         """
         Compute and return the training loss.
 
@@ -479,7 +588,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             if self.state_recons:
                 proprio_loss += self.perceptual_encoder.state_reconstruction_loss()
 
-            kl, act_loss, mod_loss, pp_dist, pr_dist, seq_feat = self.lmp_train(
+            kl, act_loss, mod_loss, pp_dist, pr_dist, seq_feat = self.low_level_train(
                 perceptual_emb, latent_goal, dataset_batch["actions"], dataset_batch["state_info"]["robot_obs"]
             )
             encoders_dict[self.modality_scope] = [pp_dist, pr_dist]
@@ -532,7 +641,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
         self.log("train/total_loss", total_loss, on_step=False, on_epoch=True, batch_size=total_bs, sync_dist=True)
         return total_loss
 
-    def validation_step(self, batch: Dict[str, Dict], batch_idx: int) -> Dict[str, torch.Tensor]:  # type: ignore
+    def validation_step_low_level(self, batch: Dict[str, Dict], batch_idx: int) -> Dict[str, torch.Tensor]:  # type: ignore
         """
         Compute and log the validation losses and additional metrics.
 
@@ -584,7 +693,7 @@ class LMP(pl.LightningModule, CalvinBaseModel):
                 gripper_sr_pp,
                 gripper_sr_pr,
                 _,
-            ) = self.lmp_val(
+            ) = self.low_level_val(
                 perceptual_emb, latent_goal, dataset_batch["actions"], dataset_batch["state_info"]["robot_obs"]
             )
             val_total_act_loss_pp += action_loss_pp
@@ -615,6 +724,105 @@ class LMP(pl.LightningModule, CalvinBaseModel):
             output[f"idx_{self.modality_scope}"] = dataset_batch["idx"]
 
         return output
+
+    def training_step_high_level(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
+        pass
+
+    def validation_step_high_level(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
+        """
+        Compute and log the validation losses and additional metrics for high-level training (RL)
+
+        Args:
+            batch (dict):
+                - 'vis' (dict):
+                    - 'rgb_obs' (dict):
+                        - 'rgb_static' (Tensor): RGB camera image of static camera
+                        - ...
+                    - 'depth_obs' (dict):
+                        - 'depth_static' (Tensor): Depth camera image of depth camera
+                        - ...
+                    - 'robot_obs' (Tensor): Proprioceptive state observation.
+                    - 'actions' (Tensor): Ground truth actions.
+                    - 'state_info' (dict):
+                        - 'robot_obs' (Tensor): Unnormalized robot states.
+                        - 'scene_obs' (Tensor): Unnormalized scene states.
+                    - 'idx' (LongTensor): Episode indices.
+                - 'lang' (dict):
+                    Like 'vis' but with additional keys:
+                        - 'language' (Tensor): Embedded Language labels.
+                        - 'use_for_aux_lang_loss' (BoolTensor): Mask of which sequences in the batch to consider for
+                            auxiliary loss.
+            batch_idx (int): Integer displaying index of this batch.
+
+        Returns:
+            Dictionary containing the sampled plans of plan recognition and plan proposal networks, as well as the
+            episode indices.
+        """
+        output = {}
+        val_total_act_loss_pp = torch.tensor(0.0).to(self.device)
+        for self.modality_scope, dataset_batch in batch.items():  # we will only use the visual modality
+            perceptual_emb = self.perceptual_encoder(
+                dataset_batch["rgb_obs"], dataset_batch["depth_obs"], dataset_batch["robot_obs"]
+            )
+            latent_goal = self.visual_goal(perceptual_emb[:, -1])
+            if self.state_recons:
+                state_recon_loss = self.perceptual_encoder.state_reconstruction_loss()
+                self.log(f"val/proprio_loss_{self.modality_scope}", state_recon_loss, sync_dist=True)
+
+            (
+                sampled_plan_pp,
+                action_loss_pp,
+                sampled_plan_pr,
+                action_loss_pr,
+                kl_loss,
+                mae_pp,
+                mae_pr,
+                gripper_sr_pp,
+                gripper_sr_pr,
+                _,
+            ) = self.high_level_val(
+                perceptual_emb, latent_goal, dataset_batch["actions"], dataset_batch["state_info"]["robot_obs"]
+            )
+            val_total_act_loss_pp += action_loss_pp
+            pr_mae_mean = mae_pr.mean()
+            pp_mae_mean = mae_pp.mean()
+            pos_mae_pp = mae_pp[..., :3].mean()
+            pos_mae_pr = mae_pr[..., :3].mean()
+            orn_mae_pp = mae_pp[..., 3:6].mean()
+            orn_mae_pr = mae_pr[..., 3:6].mean()
+            self.log(f"val_total_mae/{self.modality_scope}_total_mae_pr", pr_mae_mean, sync_dist=True)
+            self.log(f"val_total_mae/{self.modality_scope}_total_mae_pp", pp_mae_mean, sync_dist=True)
+            self.log(f"val_pos_mae/{self.modality_scope}_pos_mae_pr", pos_mae_pr, sync_dist=True)
+            self.log(f"val_pos_mae/{self.modality_scope}_pos_mae_pp", pos_mae_pp, sync_dist=True)
+            self.log(f"val_orn_mae/{self.modality_scope}_orn_mae_pr", orn_mae_pr, sync_dist=True)
+            self.log(f"val_orn_mae/{self.modality_scope}_orn_mae_pp", orn_mae_pp, sync_dist=True)
+            self.log(f"val_kl/{self.modality_scope}_kl_loss", kl_loss, sync_dist=True)
+            self.log(f"val_act/{self.modality_scope}_act_loss_pp", action_loss_pp, sync_dist=True)
+            self.log(f"val_act/{self.modality_scope}_act_loss_pr", action_loss_pr, sync_dist=True)
+            self.log(f"val_grip/{self.modality_scope}_grip_sr_pr", gripper_sr_pr, sync_dist=True)
+            self.log(f"val_grip/{self.modality_scope}_grip_sr_pp", gripper_sr_pp, sync_dist=True)
+            self.log(
+                "val_act/action_loss_pp",
+                val_total_act_loss_pp / len(self.trainer.datamodule.modalities),  # type:ignore
+                sync_dist=True,
+            )
+            output[f"sampled_plan_pp_{self.modality_scope}"] = sampled_plan_pp
+            output[f"sampled_plan_pr_{self.modality_scope}"] = sampled_plan_pr
+            output[f"idx_{self.modality_scope}"] = dataset_batch["idx"]
+
+        return output
+
+    def training_step(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
+        if self.train_low_level:
+            return self.training_step_low_level(batch, batch_idx)
+        else:
+            return self.training_step_high_level(batch, batch_idx)
+
+    def validation_step(self, batch: Dict[str, Dict], batch_idx: int) -> torch.Tensor:  # type: ignore
+        if self.train_low_level:
+            return self.validation_step_low_level(batch, batch_idx)
+        else:
+            return self.validation_step_high_level(batch, batch_idx)
 
     def reset(self):
         """

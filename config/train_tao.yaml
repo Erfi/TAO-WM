@@ -2,8 +2,8 @@ defaults:
   - setup
   - tensor_cores
   - callbacks: default
-  - datamodule: lmp
-  - model: lmp
+  - datamodule: tacorl
+  - model: tacorl
   - loss: default
   - training: default_training
   - trainer: play_trainer

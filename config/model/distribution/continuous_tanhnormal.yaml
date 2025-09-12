@@ -1,4 +1,4 @@
 _target_: taowm.utils.distributions.Distribution
 dist: "continuous"
-plan_features: 256
-base_dist: "Normal"
+plan_features: 16
+base_dist: "TanhNormal"
