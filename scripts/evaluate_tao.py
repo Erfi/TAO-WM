@@ -8,7 +8,7 @@ sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
 
 from pytorch_lightning import seed_everything
 
-from calvin_agent.evaluation.evaluate_policy_visual_goal import evaluate_policy
+from calvin_agent.evaluation.evaluate_policy_visual_goal import evaluate_policy_sequential, evaluate_policy_single
 from calvin_agent.utils.utils import get_all_checkpoints, get_checkpoints_for_epochs, get_last_checkpoint
 
 from taowm.evaluation.utils import get_model_env_taskchecker_datamodule
@@ -34,10 +34,22 @@ def main():
     )
     parser.add_argument("--start_end_tasks", type=str, help="Path to the start_end_tasks.yaml file.")
     parser.add_argument(
-        "--num_sequences", type=int, default=100, help="Number of sequences to evaluate. Default is 100."
+        "--num_sequences",
+        type=int,
+        default=100,
+        help="Number of sequences to evaluate (for sequential evaluation). Default is 100.",
     )
     parser.add_argument(
-        "--num_tasks_per_sequence", type=int, default=5, help="Number of tasks per sequence. Default is 5."
+        "--num_tasks_per_sequence",
+        type=int,
+        default=5,
+        help="Number of tasks per sequence (for sequential evaluation). Default is 5.",
+    )
+    parser.add_argument(
+        "--num_rollouts_per_task",
+        type=int,
+        default=10,
+        help="Number of rollouts per task (for single task evaluation). Default is 10.",
     )
     parser.add_argument(
         "--checkpoints",
@@ -60,6 +72,7 @@ def main():
     parser.add_argument("--eval_log_dir", default=None, type=str, help="Where to log the evaluation results.")
 
     parser.add_argument("--device", default=0, type=int, help="CUDA device")
+    parser.add_argument("--show_gui", action="store_true", help="Whether to show the GUI of the environment.")
     args = parser.parse_args()
 
     assert "train_folder" in args, "train_folder is needed for finding the checkpoints and configs"
@@ -87,8 +100,9 @@ def main():
             checkpoint,
             env=env,
             device_id=args.device,
+            show_gui=args.show_gui,
         )
-        evaluate_policy(
+        evaluate_policy_sequential(
             model=model,
             env=env,
             task_checker=task_checker,
@@ -96,6 +110,15 @@ def main():
             val_dataset_dir=datamodule.val_datasets["vis"].abs_datasets_dir,
             num_sequences=args.num_sequences,
             num_tasks_per_sequence=args.num_tasks_per_sequence,
+            eval_log_dir=args.eval_log_dir,
+        )
+        evaluate_policy_single(
+            model=model,
+            env=env,
+            task_checker=task_checker,
+            start_end_tasks_file=args.start_end_tasks,
+            val_dataset_dir=datamodule.val_datasets["vis"].abs_datasets_dir,
+            num_rollouts_per_task=10,
             eval_log_dir=args.eval_log_dir,
         )
 

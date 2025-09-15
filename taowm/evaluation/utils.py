@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 from taowm.models import MODEL_REGISTRY
 
 
-def get_model_env_taskchecker_datamodule(train_folder, dataset_path, checkpoint, env=None, device_id=0):
+def get_model_env_taskchecker_datamodule(train_folder, dataset_path, checkpoint, env=None, device_id=0, show_gui=False):
     """
     Modified version of calvin.calvin_models.calvin_agent.evaluation.utils.get_default_model_and_env
     The modification is because unlike original Calvin Benchmark that uses vision and language goals, we are
@@ -30,7 +30,7 @@ def get_model_env_taskchecker_datamodule(train_folder, dataset_path, checkpoint,
     if env is None:
         # rollout callbacks might not be present in train cfg, so we will look into the rollout
         rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "config/callbacks/rollout/default_vision.yaml")
-        env = hydra.utils.instantiate(rollout_cfg.env_cfg, dataset, device, show_gui=False)
+        env = hydra.utils.instantiate(rollout_cfg.env_cfg, dataset, device, show_gui=show_gui)
     # create a task checker
     tasks_cfg = OmegaConf.load(Path(__file__).parents[2] / "config/callbacks/rollout/tasks/new_playtable_tasks.yaml")
     tasks_checker = hydra.utils.instantiate(tasks_cfg)
