@@ -64,8 +64,8 @@ class TACORL(pl.LightningModule, CalvinBaseModel):
         state_recon_beta: float,
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
-        replan_freq: int = 30,
-        enable_goal_conditioned_action_decoder: bool = True,
+        replan_freq: int = 15,
+        enable_goal_conditioned_action_decoder: bool = False,
         train_low_level: bool = True,
     ):
         super(TACORL, self).__init__()
@@ -89,8 +89,10 @@ class TACORL(pl.LightningModule, CalvinBaseModel):
         # goal encoders
         self.visual_goal = hydra.utils.instantiate(visual_goal)
 
-        # critic network
+        # critic network and target critic network
         self.critic = hydra.utils.instantiate(critic)
+        # self.critic_target = hydra.utils.instantiate(critic)
+        # self.critic_target.load_state_dict(self.critic.state_dict())
 
         # policy network
         self.action_decoder: ActionDecoder = hydra.utils.instantiate(action_decoder)

@@ -111,6 +111,7 @@ def main():
             num_sequences=args.num_sequences,
             num_tasks_per_sequence=args.num_tasks_per_sequence,
             eval_log_dir=args.eval_log_dir,
+            sort_strategy="shortest",
         )
         evaluate_policy_single(
             model=model,
@@ -120,6 +121,7 @@ def main():
             val_dataset_dir=datamodule.val_datasets["vis"].abs_datasets_dir,
             num_rollouts_per_task=10,
             eval_log_dir=args.eval_log_dir,
+            sort_strategy="shortest",
         )
 
 

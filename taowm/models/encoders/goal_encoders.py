@@ -12,10 +12,12 @@ class VisualGoalEncoder(nn.Module):
         latent_goal_features: int,
         in_features: int,
         l2_normalize_goal_embeddings: bool,
+        layer_normalize_goal_embeddings: bool,
         activation_function: str,
     ):
         super().__init__()
         self.l2_normalize_output = l2_normalize_goal_embeddings
+        self.layer_normalize_output = layer_normalize_goal_embeddings
         self.act_fn = getattr(nn, activation_function)()
         self.mlp = nn.Sequential(
             nn.Linear(in_features=in_features, out_features=hidden_size),
@@ -32,7 +34,8 @@ class VisualGoalEncoder(nn.Module):
         x = self.mlp(x)
         if self.l2_normalize_output:
             x = F.normalize(x, p=2, dim=1)
-        x = self.ln(x)
+        if self.layer_normalize_output:
+            x = self.ln(x)
         return x
 
 

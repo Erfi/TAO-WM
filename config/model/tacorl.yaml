@@ -18,4 +18,4 @@ kl_balancing_mix: ${loss.kl_balancing_mix}
 state_recons: false
 state_recon_beta: ${loss.state_recon_beta}
 enable_goal_conditioned_action_decoder: false
-train_low_level: false                                # true: Train Action Decoder using IL, false: Train Plan Proposal using RL
+train_low_level: true                                # true: Train Action Decoder using IL, false: Train Plan Proposal using RL

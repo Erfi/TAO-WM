@@ -17,6 +17,7 @@ class VisionNetwork(nn.Module):
         activation_function: str,
         dropout_vis_fc: float,
         l2_normalize_output: bool,
+        layer_normalize_output: bool,
         visual_features: int,
         num_c: int,
         use_sinusoid: bool,
@@ -24,6 +25,7 @@ class VisionNetwork(nn.Module):
     ):
         super(VisionNetwork, self).__init__()
         self.l2_normalize_output = l2_normalize_output
+        self.layer_normalize_output = layer_normalize_output
         self.act_fn = getattr(nn, activation_function)()
         # w,h,kernel_size,padding,stride
         w, h = self.calc_out_size(input_width, input_height, 8, 0, 4)
@@ -61,7 +63,8 @@ class VisionNetwork(nn.Module):
         x = self.fc2(x)
         if self.l2_normalize_output:
             x = F.normalize(x, p=2, dim=1)
-        x = self.ln(x)
+        if self.layer_normalize_output:
+            x = self.ln(x)
         return x  # shape: [N, 64]
 
     @staticmethod

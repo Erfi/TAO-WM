@@ -1,7 +1,7 @@
 _target_: taowm.datasets.goal_augmented_disk_dataset.GoalAugmentedDiskDataset
 key: "vis"
 save_format: "npz"
-batch_size: 32
+batch_size: 128
 min_window_size: 8
 max_window_size: 16
 proprio_state: ${datamodule.proprioception_dims}

@@ -4,6 +4,7 @@ input_height: 200
 activation_function: ReLU #ELU
 dropout_vis_fc: 0.0
 l2_normalize_output: false
+layer_normalize_output: false
 visual_features: 64
 num_c: 1
 use_sinusoid: false
